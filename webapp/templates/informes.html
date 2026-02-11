@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Informes - Control-M Search{% endblock %}
+
+{% block extra_css %}
+<style>
+    .informes-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+    @media (max-width: 992px) { .informes-grid { grid-template-columns: 1fr; } }
+    .report-card { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .report-card .card-header { background: #d35400; color: #fff; font-weight: 600; padding: 0.5rem 0.75rem; font-size: 0.95rem; }
+    .report-card .table { margin: 0; font-size: 0.9rem; }
+    .report-card .table th { background: #e67e22; color: #fff; white-space: nowrap; padding: 0.4rem 0.6rem; }
+    .report-card .table td { padding: 0.4rem 0.6rem; }
+    .report-card .table-responsive { max-height: 320px; overflow-y: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h5 class="mb-4">Informes DEF_JOB</h5>
+
+{% if error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% else %}
+<div class="informes-grid">
+    <div class="report-card">
+        <div class="card-header">Por NODE_ID</div>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover table-sm mb-0">
+                <thead><tr>
+                    {% if report_node %}{% for key in report_node[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                    {% else %}<th>NODE_ID</th><th>TOTAL</th>{% endif %}
+                </tr></thead>
+                <tbody>
+                    {% for row in report_node %}
+                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                    {% else %}
+                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="report-card">
+        <div class="card-header">Por APPLICATION</div>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover table-sm mb-0">
+                <thead><tr>
+                    {% if report_app %}{% for key in report_app[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                    {% else %}<th>APPLICATION</th><th>TOTAL</th>{% endif %}
+                </tr></thead>
+                <tbody>
+                    {% for row in report_app %}
+                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                    {% else %}
+                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="report-card">
+        <div class="card-header">Por TASK_TYPE</div>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover table-sm mb-0">
+                <thead><tr>
+                    {% if report_task %}{% for key in report_task[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                    {% else %}<th>TASK_TYPE</th><th>TOTAL</th>{% endif %}
+                </tr></thead>
+                <tbody>
+                    {% for row in report_task %}
+                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                    {% else %}
+                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="report-card">
+        <div class="card-header">Por OWNER</div>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover table-sm mb-0">
+                <thead><tr>
+                    {% if report_owner %}{% for key in report_owner[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                    {% else %}<th>OWNER</th><th>TOTAL</th>{% endif %}
+                </tr></thead>
+                <tbody>
+                    {% for row in report_owner %}
+                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                    {% else %}
+                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<p class="mt-3">
+    <a href="{{ url_for('index') }}" class="btn btn-outline-primary btn-sm">Volver al inicio</a>
+</p>
+{% endblock %}

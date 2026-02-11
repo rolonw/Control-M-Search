@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}About{% endblock %}
+
+{% block content %}
+<div class="card mx-auto" style="max-width: 500px;">
+    <div class="card-body">
+        <h5 class="card-title">Control-M Search®</h5>
+        <p class="card-text">
+            Versión Web - 2024<br>
+            By Walter Rolon<br>
+            Contacto: soporte@cgconsultores.com.ar
+        </p>
+        <hr>
+        <p class="small text-muted mb-0">
+            <strong>Tipo de BD:</strong> {{ db_type }}<br>
+            <strong>Servidor EMS:</strong> {{ server_ems }}<br>
+            <strong>Servidor CTM:</strong> {{ server_ctm }}
+        </p>
+    </div>
+</div>
+{% endblock %}

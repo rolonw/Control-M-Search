@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h5 class="mb-3">{{ title }}</h5>
+<p class="count-msg mb-2">
+    {% if count == 0 %}No hay registros para mostrar.{% else %}{{ count }} registros encontrados.{% endif %}
+</p>
+<div class="results-table table-responsive">
+    {% if results %}
+    <table class="table table-bordered table-hover table-sm">
+        <thead>
+            <tr>
+                {% for key in results[0].keys() %}
+                <th>{{ key }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in results %}
+            <tr>
+                {% for v in row.values() %}
+                <td>{{ v }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted p-3">Sin resultados.</p>
+    {% endif %}
+</div>
+<a href="{{ url_for('index') }}" class="btn btn-outline-primary btn-sm">Volver al inicio</a>
+{% endblock %}
