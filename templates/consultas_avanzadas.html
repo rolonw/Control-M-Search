@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Consultas Avanzadas{% endblock %}
+
+{% block content %}
+<h5 class="mb-3">Consultas Avanzadas</h5>
+<div class="row">
+    <div class="col-md-4">
+        <div class="panel-datajob p-3 mb-3">
+            <form method="post" action="{{ url_for('consultas_avanzadas_search') }}" id="formAvanzado">
+                <input type="hidden" name="search_type" id="search_type" value="">
+
+                <div class="card mb-2">
+                    <div class="card-header small fw-bold">AFT</div>
+                    <div class="card-body py-2">
+                        <label class="form-label small">Job name AFT</label>
+                        <input type="text" class="form-control form-control-sm mb-2" name="aft_jobname" id="aft_jobname">
+                        <label class="form-label small">Origen-Destino AFT</label>
+                        <input type="text" class="form-control form-control-sm" name="aft_origendestino" id="aft_origendestino">
+                    </div>
+                </div>
+
+                <div class="card mb-2">
+                    <div class="card-header small fw-bold">SAP</div>
+                    <div class="card-body py-2">
+                        <label class="form-label small">Nombre en Control-M</label>
+                        <input type="text" class="form-control form-control-sm mb-2" name="sap_cm" id="sap_cm">
+                        <label class="form-label small">Nombre en SAP</label>
+                        <input type="text" class="form-control form-control-sm" name="sap_r3" id="sap_r3">
+                    </div>
+                </div>
+
+                <div class="card mb-2">
+                    <div class="card-header small fw-bold">BW</div>
+                    <div class="card-body py-2">
+                        <label class="form-label small">Job name Control-M</label>
+                        <input type="text" class="form-control form-control-sm mb-2" name="bw_controlm" id="bw_controlm">
+                        <label class="form-label small">Cadena de procesos</label>
+                        <input type="text" class="form-control form-control-sm" name="bw_cadena" id="bw_cadena">
+                    </div>
+                </div>
+
+                <div class="card mb-2">
+                    <div class="card-header small fw-bold">OS400</div>
+                    <div class="card-body py-2">
+                        <label class="form-label small">CMD Line</label>
+                        <input type="text" class="form-control form-control-sm mb-2" name="os400_cmdline" id="os400_cmdline">
+                        <label class="form-label small">Job name Control-M</label>
+                        <input type="text" class="form-control form-control-sm" name="os400_jobname" id="os400_jobname">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-sm w-100">Buscar</button>
+            </form>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <p class="count-msg mb-2">
+            {% if count is not none %}
+                {% if count == 0 %}No hay registros para mostrar.{% else %}{{ count }} registros encontrados.{% endif %}
+            {% endif %}
+        </p>
+        <div class="results-table table-responsive">
+            {% if results %}
+            <table class="table table-bordered table-hover table-sm">
+                <thead>
+                    <tr>
+                        {% for key in results[0].keys() %}
+                        <th>{{ key }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in results %}
+                    <tr>
+                        {% for v in row.values() %}
+                        <td>{{ v }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-muted p-3">Elija un criterio y pulse Buscar.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var form = document.getElementById('formAvanzado');
+    var searchType = document.getElementById('search_type');
+    var fields = [
+        ['aft_jobname', 'aft_jobname'],
+        ['aft_origendestino', 'aft_origendestino'],
+        ['sap_cm', 'sap_cm'],
+        ['sap_r3', 'sap_r3'],
+        ['bw_controlm', 'bw_controlm'],
+        ['bw_cadena', 'bw_cadena'],
+        ['os400_cmdline', 'os400_cmdline'],
+        ['os400_jobname', 'os400_jobname']
+    ];
+    form.addEventListener('submit', function(e) {
+        for (var i = 0; i < fields.length; i++) {
+            var el = document.getElementById(fields[i][0]);
+            if (el && el.value.trim()) {
+                searchType.value = fields[i][1];
+                return;
+            }
+        }
+        e.preventDefault();
+        alert('Ingrese al menos un criterio.');
+    });
+})();
+</script>
+{% endblock %}

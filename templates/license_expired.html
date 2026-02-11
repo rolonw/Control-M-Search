@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Licencia no válida - Control-M Search</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #ffe0c0; font-family: 'Segoe UI', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .license-box { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 2rem; max-width: 480px; text-align: center; border: 2px solid #d35400; }
+        .license-box h1 { color: #d35400; font-size: 1.5rem; margin-bottom: 1rem; }
+        .license-box p { color: #333; margin-bottom: 1.5rem; }
+        .license-box .btn { background: #d35400; border-color: #d35400; }
+        .license-box .btn:hover { background: #e67e22; border-color: #e67e22; }
+    </style>
+</head>
+<body>
+    <div class="license-box">
+        <h1>Licencia no válida</h1>
+        {% if valid_until %}
+        <p class="mb-0">La licencia de uso ha expirado (válida hasta el <strong>{{ valid_until }}</strong>).</p>
+        {% else %}
+        <p class="mb-0">La aplicación no tiene una licencia activa. El administrador debe activarla desde el panel de administración.</p>
+        {% endif %}
+        <p class="text-muted small mt-2">La validación se realiza en el servidor y no puede ser modificada por el usuario.</p>
+        <a href="{{ url_for('admin') }}" class="btn btn-primary">Acceder como administrador</a>
+    </div>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "engine": "oracle",
+  "oracle": {
+    "ems_dsn": "oradb:1521/orcl",
+    "ems_tns": "",
+    "ems_user": "CTMEMS919WIN",
+    "ems_password": "Passw0rd",
+    "ctm_dsn": "oradb:1521/orcl",
+    "ctm_tns": "",
+    "ctm_user": "CTMSRV919WIN",
+    "ctm_password": "Passw0rd"
+  },
+  "mssql": {
+    "dsn": "sqlsrv\\ctmsql",
+    "user": "ctmems920200",
+    "password": "Passw0rd"
+  },
+  "postgresql": {
+    "dsn": "",
+    "user": "",
+    "password": ""
+  }
+}

@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Administración - Configuración de BD{% endblock %}
+
+{% block extra_css %}
+<style>
+    .admin-form { max-width: 800px; margin: 0 auto; }
+    .db-section { background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; }
+    .db-section h5 { color: #d35400; margin-bottom: 1rem; }
+    .form-row-inline { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .form-row-inline label { min-width: 10rem; flex-shrink: 0; font-size: 0.9rem; font-weight: 500; }
+    .form-row-inline input, .form-row-inline select { flex: 1; }
+    .alert-success { margin-top: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-form">
+    <h3 class="mb-4">Configuración de Base de Datos</h3>
+    
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <strong>¡Configuración guardada!</strong> La aplicación se reiniciará para aplicar los cambios.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    {% if license_success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        {{ license_success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    {% if license_error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        {{ license_error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <div class="db-section">
+        <h5>Licencia de uso</h5>
+        <p class="mb-2 small text-muted">La validación es por fecha en el servidor; el usuario no puede manipularla. La clave y la duración solo las puede proveer el desarrollador.</p>
+        <div class="form-row-inline mb-2">
+            <label>Válida hasta:</label>
+            <strong>{% if license_valid_until %}{{ license_valid_until }}{% else %}No activada{% endif %}</strong>
+        </div>
+        <form method="post" action="{{ url_for('admin') }}" class="d-flex flex-wrap align-items-end gap-2">
+            <input type="hidden" name="action" value="activate_license">
+            <div class="form-row-inline mb-0" style="flex: 1; min-width: 280px;">
+                <label for="license_key">Clave de licencia:</label>
+                <input type="password" class="form-control" name="license_key" id="license_key" placeholder="Pegar la clave proporcionada por el desarrollador">
+            </div>
+            <button type="submit" class="btn btn-primary">Activar licencia</button>
+        </form>
+    </div>
+
+    <form method="post" action="{{ url_for('admin') }}">
+        <div class="db-section">
+            <h5>Tipo de Base de Datos</h5>
+            <div class="form-row-inline">
+                <label for="db_type">Tipo:</label>
+                <select class="form-select" name="db_type" id="db_type" required>
+                    <option value="oracle" {% if config.db_type == 'oracle' %}selected{% endif %}>Oracle</option>
+                    <option value="mssql" {% if config.db_type == 'mssql' %}selected{% endif %}>Microsoft SQL Server</option>
+                    <option value="postgresql" {% if config.db_type == 'postgresql' %}selected{% endif %}>PostgreSQL</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="db-section">
+            <h5>Control-M EMS (Definiciones)</h5>
+            <div class="form-row-inline">
+                <label for="ems_host">Host:</label>
+                <input type="text" class="form-control" name="ems_host" id="ems_host" value="{{ config.ems.host }}" required>
+            </div>
+            <div class="form-row-inline">
+                <label for="ems_port">Puerto:</label>
+                <input type="number" class="form-control" name="ems_port" id="ems_port" value="{{ config.ems.port }}" required>
+            </div>
+            <div class="form-row-inline" id="ems_oracle_fields">
+                <label for="ems_service_name">Service Name:</label>
+                <input type="text" class="form-control" name="ems_service_name" id="ems_service_name" value="{{ config.ems.service_name }}">
+            </div>
+            <div class="form-row-inline" id="ems_oracle_fields2">
+                <label for="ems_sid">SID (alternativo):</label>
+                <input type="text" class="form-control" name="ems_sid" id="ems_sid" value="{{ config.ems.sid }}">
+            </div>
+            <div class="form-row-inline" id="ems_oracle_fields3">
+                <label for="ems_tns">TNS Descriptor:</label>
+                <textarea class="form-control" name="ems_tns" id="ems_tns" rows="2" placeholder="(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)...))">{{ config.ems.tns }}</textarea>
+            </div>
+            <div class="form-row-inline" id="ems_mssql_postgres_fields" style="display: none;">
+                <label for="ems_database">Base de Datos:</label>
+                <input type="text" class="form-control" name="ems_database" id="ems_database" value="{{ config.ems.database }}">
+            </div>
+            <div class="form-row-inline" id="ems_mssql_fields" style="display: none;">
+                <label for="ems_driver">Driver ODBC:</label>
+                <select class="form-select" name="ems_driver" id="ems_driver">
+                    {% if odbc_drivers %}
+                        {% for driver in odbc_drivers %}
+                            <option value="{{ driver }}" {% if config.ems.get('driver', '') == driver %}selected{% endif %}>{{ driver }}</option>
+                        {% endfor %}
+                    {% else %}
+                        <option value="">No hay drivers disponibles</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="form-row-inline">
+                <label for="ems_user">Usuario:</label>
+                <input type="text" class="form-control" name="ems_user" id="ems_user" value="{{ config.ems.user }}" required>
+            </div>
+            <div class="form-row-inline">
+                <label for="ems_password">Contraseña:</label>
+                <input type="password" class="form-control" name="ems_password" id="ems_password" value="{{ config.ems.password }}" required>
+            </div>
+        </div>
+
+        <div class="db-section">
+            <h5>Control-M Server (CMS, CMR, RUNINFO)</h5>
+            <div class="form-row-inline">
+                <label for="ctm_host">Host:</label>
+                <input type="text" class="form-control" name="ctm_host" id="ctm_host" value="{{ config.ctm.host }}" required>
+            </div>
+            <div class="form-row-inline">
+                <label for="ctm_port">Puerto:</label>
+                <input type="number" class="form-control" name="ctm_port" id="ctm_port" value="{{ config.ctm.port }}" required>
+            </div>
+            <div class="form-row-inline" id="ctm_oracle_fields">
+                <label for="ctm_service_name">Service Name:</label>
+                <input type="text" class="form-control" name="ctm_service_name" id="ctm_service_name" value="{{ config.ctm.service_name }}">
+            </div>
+            <div class="form-row-inline" id="ctm_oracle_fields2">
+                <label for="ctm_sid">SID (alternativo):</label>
+                <input type="text" class="form-control" name="ctm_sid" id="ctm_sid" value="{{ config.ctm.sid }}">
+            </div>
+            <div class="form-row-inline" id="ctm_oracle_fields3">
+                <label for="ctm_tns">TNS Descriptor:</label>
+                <textarea class="form-control" name="ctm_tns" id="ctm_tns" rows="2" placeholder="(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)...))">{{ config.ctm.tns }}</textarea>
+            </div>
+            <div class="form-row-inline" id="ctm_mssql_postgres_fields" style="display: none;">
+                <label for="ctm_database">Base de Datos:</label>
+                <input type="text" class="form-control" name="ctm_database" id="ctm_database" value="{{ config.ctm.database }}">
+            </div>
+            <div class="form-row-inline" id="ctm_mssql_fields" style="display: none;">
+                <label for="ctm_driver">Driver ODBC:</label>
+                <select class="form-select" name="ctm_driver" id="ctm_driver">
+                    {% if odbc_drivers %}
+                        {% for driver in odbc_drivers %}
+                            <option value="{{ driver }}" {% if config.ctm.get('driver', '') == driver %}selected{% endif %}>{{ driver }}</option>
+                        {% endfor %}
+                    {% else %}
+                        <option value="">No hay drivers disponibles</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="form-row-inline">
+                <label for="ctm_user">Usuario:</label>
+                <input type="text" class="form-control" name="ctm_user" id="ctm_user" value="{{ config.ctm.user }}" required>
+            </div>
+            <div class="form-row-inline">
+                <label for="ctm_password">Contraseña:</label>
+                <input type="password" class="form-control" name="ctm_password" id="ctm_password" value="{{ config.ctm.password }}" required>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Guardar Configuración</button>
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<script>
+(function() {
+    var dbType = document.getElementById('db_type');
+    var emsOracleFields = document.getElementById('ems_oracle_fields');
+    var emsOracleFields2 = document.getElementById('ems_oracle_fields2');
+    var emsOracleFields3 = document.getElementById('ems_oracle_fields3');
+    var emsMssqlPostgresFields = document.getElementById('ems_mssql_postgres_fields');
+    var emsMssqlFields = document.getElementById('ems_mssql_fields');
+    var ctmOracleFields = document.getElementById('ctm_oracle_fields');
+    var ctmOracleFields2 = document.getElementById('ctm_oracle_fields2');
+    var ctmOracleFields3 = document.getElementById('ctm_oracle_fields3');
+    var ctmMssqlPostgresFields = document.getElementById('ctm_mssql_postgres_fields');
+    var ctmMssqlFields = document.getElementById('ctm_mssql_fields');
+
+    function toggleFields() {
+        var isOracle = dbType.value === 'oracle';
+        var isMssql = dbType.value === 'mssql';
+        emsOracleFields.style.display = isOracle ? 'flex' : 'none';
+        emsOracleFields2.style.display = isOracle ? 'flex' : 'none';
+        emsOracleFields3.style.display = isOracle ? 'flex' : 'none';
+        emsMssqlPostgresFields.style.display = isOracle ? 'none' : 'flex';
+        emsMssqlFields.style.display = isMssql ? 'flex' : 'none';
+        ctmOracleFields.style.display = isOracle ? 'flex' : 'none';
+        ctmOracleFields2.style.display = isOracle ? 'flex' : 'none';
+        ctmOracleFields3.style.display = isOracle ? 'flex' : 'none';
+        ctmMssqlPostgresFields.style.display = isOracle ? 'none' : 'flex';
+        ctmMssqlFields.style.display = isMssql ? 'flex' : 'none';
+    }
+
+    dbType.addEventListener('change', toggleFields);
+    toggleFields(); // Ejecutar al cargar
+})();
+</script>
+{% endblock %}

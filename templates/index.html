@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Control-M Search - Inicio{% endblock %}
+
+{% block extra_css %}
+<style>
+    .index-layout { height: calc(100vh - 120px); min-height: 320px; display: flex; flex-direction: column; }
+    .index-layout .row { flex: 1; min-height: 0; height: 100%; }
+    .index-layout .col-md-3 { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+    .panel-datajob { background: var(--ctm-orange); border-radius: 8px; padding: 1rem; overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
+    .index-layout .col-md-9 { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .results-wrapper { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+    .results-table { background: #fff; border-radius: 8px; overflow: auto; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
+    .results-table .table { margin: 0; }
+    .results-table .table.table-bordered { border-collapse: collapse; }
+    .form-row-inline { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+    .form-row-inline .form-label { margin: 0; min-width: 7rem; flex-shrink: 0; font-size: 0.8rem; }
+    .form-row-inline .form-control, .form-row-inline .form-select { flex: 1; min-width: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="index-layout">
+<div class="row flex-grow-1">
+    <div class="col-md-3">
+        <div class="panel-datajob p-3 mb-3">
+            <h6 class="fw-bold mb-3">DataJob</h6>
+            <form method="post" action="{{ url_for('search') }}" id="formSearch">
+                <input type="hidden" name="search_type" id="search_type" value="">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="all_fields" value="1" id="all_fields">
+                    <label class="form-check-label" for="all_fields">Activar todos los campos</label>
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="application">Aplicación</label>
+                    <select class="form-select form-select-sm" name="application" id="application">
+                        <option value="">-- Seleccione --</option>
+                        {% for a in apps %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="group">Sub Aplicación</label>
+                    <select class="form-select form-select-sm" name="group" id="group">
+                        <option value="">-- Seleccione --</option>
+                        {% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small fw-bold" for="jobname">Job name</label>
+                    <input type="text" class="form-control form-control-sm" name="jobname" id="jobname" placeholder="Nombre de Job">
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="script">Script o CmdLine</label>
+                    <input type="text" class="form-control form-control-sm" name="script" id="script">
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="variables">Variables</label>
+                    <input type="text" class="form-control form-control-sm" name="variables" id="variables">
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="node_id">Node ID</label>
+                    <select class="form-select form-select-sm" name="node_id" id="node_id">
+                        <option value="">-- Seleccione --</option>
+                        {% for n in nodes %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="tables">Folders</label>
+                    <input type="text" class="form-control form-control-sm" name="tables" id="tables">
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="description">Descripción</label>
+                    <input type="text" class="form-control form-control-sm" name="description" id="description" maxlength="255">
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="estadisticas">Estadísticas</label>
+                    <input type="text" class="form-control form-control-sm" name="estadisticas" id="estadisticas">
+                </div>
+                <hr>
+                <h6 class="fw-bold small text-dark">IN CONDITIONS</h6>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="in_condition_job">Job name</label>
+                    <input type="text" class="form-control form-control-sm" name="in_condition_job" id="in_condition_job">
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="in_condition">Condición entrada</label>
+                    <input type="text" class="form-control form-control-sm" name="in_condition" id="in_condition">
+                </div>
+                <h6 class="fw-bold small text-dark mt-2">OUT CONDITIONS</h6>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="out_condition_job">Job name</label>
+                    <input type="text" class="form-control form-control-sm" name="out_condition_job" id="out_condition_job">
+                </div>
+                <div class="form-row-inline">
+                    <label class="form-label small" for="out_condition">Condición salida</label>
+                    <input type="text" class="form-control form-control-sm" name="out_condition" id="out_condition">
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm w-100 mt-2">Buscar</button>
+            </form>
+        </div>
+        <div class="small text-muted">
+            Ingrese un criterio y pulse Buscar. Para aplicación/group/node, al elegir se busca automáticamente si se desea.
+        </div>
+    </div>
+    <div class="col-md-9">
+        <p class="count-msg mb-2 flex-shrink-0">
+            {% if count is not none %}
+                {% if count == 0 %}No hay registros para mostrar.{% else %}{{ count }} registros encontrados.{% endif %}
+            {% endif %}
+        </p>
+        <div class="results-wrapper">
+        <div class="results-table table-responsive">
+            {% if results %}
+            <table class="table table-bordered table-hover table-sm">
+                <thead>
+                    <tr>
+                        {% for key in results[0].keys() %}
+                        <th>{{ key }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in results %}
+                    <tr>
+                        {% for v in row.values() %}
+                        <td>{{ v }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-muted p-3">Realice una búsqueda para ver resultados.</p>
+            {% endif %}
+        </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<script>
+(function() {
+    var form = document.getElementById('formSearch');
+    var searchType = document.getElementById('search_type');
+
+    function submitWithType(type) {
+        searchType.value = type;
+        form.submit();
+    }
+
+    document.getElementById('application').addEventListener('change', function() {
+        if (this.value) submitWithType('application');
+    });
+    document.getElementById('group').addEventListener('change', function() {
+        if (this.value) submitWithType('group');
+    });
+    document.getElementById('node_id').addEventListener('change', function() {
+        if (this.value) submitWithType('node_id');
+    });
+
+    form.addEventListener('submit', function(e) {
+        if (searchType.value) return;
+        var jobname = document.getElementById('jobname').value.trim();
+        if (jobname) { searchType.value = 'jobname'; return; }
+        var desc = document.getElementById('description').value.trim();
+        if (desc) { searchType.value = 'description'; return; }
+        var tables = document.getElementById('tables').value.trim();
+        if (tables) { searchType.value = 'tables'; return; }
+        var script = document.getElementById('script').value.trim();
+        if (script) { searchType.value = 'script'; return; }
+        var variables = document.getElementById('variables').value.trim();
+        if (variables) { searchType.value = 'variables'; return; }
+        var estadisticas = document.getElementById('estadisticas').value.trim();
+        if (estadisticas) { searchType.value = 'estadisticas'; return; }
+        var inCond = document.getElementById('in_condition').value.trim();
+        if (inCond) { searchType.value = 'in_condition'; return; }
+        var inJob = document.getElementById('in_condition_job').value.trim();
+        if (inJob) { searchType.value = 'in_condition_job'; return; }
+        var outCond = document.getElementById('out_condition').value.trim();
+        if (outCond) { searchType.value = 'out_condition'; return; }
+        var outJob = document.getElementById('out_condition_job').value.trim();
+        if (outJob) { searchType.value = 'out_condition_job'; return; }
+        e.preventDefault();
+        alert('Ingrese al menos un criterio de búsqueda.');
+    });
+})();
+</script>
+{% endblock %}
