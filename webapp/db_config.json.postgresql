@@ -1,0 +1,25 @@
+{
+  "db_type": "postgresql",
+    "ems": {
+      "host": "ctm921",
+      "port": 5432,
+      "service_name": "",
+      "sid": "",
+      "tns": "",
+      "user": "ctmems",
+      "password": "Passw0rd",
+      "database": "ctmems",
+      "driver": "SQL Server"
+    },
+    "ctm": {
+      "host": "ctm921",
+      "port": 5432,
+      "service_name": "",
+      "sid": "",
+      "tns": "",
+      "user": "ctmsrv",
+      "password": "Passw0rd",
+      "database": "ctmsrv",
+      "driver": "SQL Server"
+    }
+}

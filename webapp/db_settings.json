@@ -16,8 +16,10 @@
     "password": "Passw0rd"
   },
   "postgresql": {
-    "dsn": "",
-    "user": "",
-    "password": ""
+    "host": "ctm921",
+    "port": 5432,
+    "user": "ctmsrv",
+    "password": "Passw0rd",
+    "database": "ctmsrv"
   }
 }

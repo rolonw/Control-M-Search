@@ -3,14 +3,62 @@
 
 {% block extra_css %}
 <style>
-    .informes-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
-    @media (max-width: 992px) { .informes-grid { grid-template-columns: 1fr; } }
-    .report-card { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .report-card .card-header { background: #d35400; color: #fff; font-weight: 600; padding: 0.5rem 0.75rem; font-size: 0.95rem; }
+    .informes-layout { display: flex; gap: 0; min-height: 60vh; }
+    .informes-sidebar {
+        width: 220px;
+        min-width: 220px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        padding: 0.5rem 0;
+        margin-right: 1rem;
+    }
+    .informes-sidebar .nav-link {
+        color: #333;
+        padding: 0.6rem 1rem;
+        border-left: 3px solid transparent;
+        border-radius: 0 6px 6px 0;
+    }
+    .informes-sidebar .nav-link:hover { background: #ffe0c0; color: #d35400; }
+    .informes-sidebar .nav-link.active {
+        background: #e67e22;
+        color: #fff;
+        border-left-color: #d35400;
+        font-weight: 600;
+    }
+    .informes-content { flex: 1; min-width: 0; }
+    .informe-panel { display: none; }
+    .informe-panel.active { display: block; }
+    .report-card {
+        background: #fff;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .report-card .card-header {
+        background: #d35400;
+        color: #fff;
+        font-weight: 600;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.95rem;
+    }
     .report-card .table { margin: 0; font-size: 0.9rem; }
     .report-card .table th { background: #e67e22; color: #fff; white-space: nowrap; padding: 0.4rem 0.6rem; }
     .report-card .table td { padding: 0.4rem 0.6rem; }
-    .report-card .table-responsive { max-height: 320px; overflow-y: auto; }
+    .report-card .table-responsive { max-height: 70vh; overflow-y: auto; }
+    @media (max-width: 768px) {
+        .informes-layout { flex-direction: column; }
+        .informes-sidebar {
+            width: 100%;
+            min-width: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+            padding: 0.5rem;
+        }
+        .informes-sidebar .nav-link { border-left: none; border-bottom: 3px solid transparent; border-radius: 6px; }
+        .informes-sidebar .nav-link.active { border-left: none; border-bottom-color: #d35400; }
+    }
 </style>
 {% endblock %}
 
@@ -23,83 +71,128 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% else %}
-<div class="informes-grid">
-    <div class="report-card">
-        <div class="card-header">Por NODE_ID</div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover table-sm mb-0">
-                <thead><tr>
-                    {% if report_node %}{% for key in report_node[0].keys() %}<th>{{ key }}</th>{% endfor %}
-                    {% else %}<th>NODE_ID</th><th>TOTAL</th>{% endif %}
-                </tr></thead>
-                <tbody>
-                    {% for row in report_node %}
-                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
-                    {% else %}
-                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+<div class="informes-layout">
+    <nav class="informes-sidebar">
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link active" href="#" data-informe="node">Por NODE_ID</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-informe="app">Por APPLICATION</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-informe="task">Por TASK_TYPE</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-informe="owner">Por OWNER</a>
+            </li>
+        </ul>
+    </nav>
 
-    <div class="report-card">
-        <div class="card-header">Por APPLICATION</div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover table-sm mb-0">
-                <thead><tr>
-                    {% if report_app %}{% for key in report_app[0].keys() %}<th>{{ key }}</th>{% endfor %}
-                    {% else %}<th>APPLICATION</th><th>TOTAL</th>{% endif %}
-                </tr></thead>
-                <tbody>
-                    {% for row in report_app %}
-                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
-                    {% else %}
-                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <div class="informes-content">
+        <div id="panel-node" class="informe-panel active">
+            <div class="report-card">
+                <div class="card-header">Por NODE_ID</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm mb-0">
+                        <thead><tr>
+                            {% if report_node %}{% for key in report_node[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            {% else %}<th>NODE_ID</th><th>TOTAL</th>{% endif %}
+                        </tr></thead>
+                        <tbody>
+                            {% for row in report_node %}
+                            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-    </div>
 
-    <div class="report-card">
-        <div class="card-header">Por TASK_TYPE</div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover table-sm mb-0">
-                <thead><tr>
-                    {% if report_task %}{% for key in report_task[0].keys() %}<th>{{ key }}</th>{% endfor %}
-                    {% else %}<th>TASK_TYPE</th><th>TOTAL</th>{% endif %}
-                </tr></thead>
-                <tbody>
-                    {% for row in report_task %}
-                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
-                    {% else %}
-                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div id="panel-app" class="informe-panel">
+            <div class="report-card">
+                <div class="card-header">Por APPLICATION</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm mb-0">
+                        <thead><tr>
+                            {% if report_app %}{% for key in report_app[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            {% else %}<th>APPLICATION</th><th>TOTAL</th>{% endif %}
+                        </tr></thead>
+                        <tbody>
+                            {% for row in report_app %}
+                            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-    </div>
 
-    <div class="report-card">
-        <div class="card-header">Por OWNER</div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover table-sm mb-0">
-                <thead><tr>
-                    {% if report_owner %}{% for key in report_owner[0].keys() %}<th>{{ key }}</th>{% endfor %}
-                    {% else %}<th>OWNER</th><th>TOTAL</th>{% endif %}
-                </tr></thead>
-                <tbody>
-                    {% for row in report_owner %}
-                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
-                    {% else %}
-                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div id="panel-task" class="informe-panel">
+            <div class="report-card">
+                <div class="card-header">Por TASK_TYPE</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm mb-0">
+                        <thead><tr>
+                            {% if report_task %}{% for key in report_task[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            {% else %}<th>TASK_TYPE</th><th>TOTAL</th>{% endif %}
+                        </tr></thead>
+                        <tbody>
+                            {% for row in report_task %}
+                            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="panel-owner" class="informe-panel">
+            <div class="report-card">
+                <div class="card-header">Por OWNER</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm mb-0">
+                        <thead><tr>
+                            {% if report_owner %}{% for key in report_owner[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            {% else %}<th>OWNER</th><th>TOTAL</th>{% endif %}
+                        </tr></thead>
+                        <tbody>
+                            {% for row in report_owner %}
+                            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+(function() {
+    var links = document.querySelectorAll('.informes-sidebar .nav-link[data-informe]');
+    var panels = document.querySelectorAll('.informe-panel');
+    links.forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            var id = link.getAttribute('data-informe');
+            links.forEach(function(l) { l.classList.remove('active'); });
+            link.classList.add('active');
+            panels.forEach(function(p) {
+                p.classList.toggle('active', p.id === 'panel-' + id);
+            });
+        });
+    });
+})();
+</script>
 {% endif %}
 
 <p class="mt-3">
