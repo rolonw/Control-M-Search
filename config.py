@@ -1,11 +1,8 @@
 # config.py - Configuración de la aplicación
 import os
 import re
-from dotenv import load_dotenv
 from db_config_manager import load_config
 from odbc_utils import get_default_sql_server_driver
-
-load_dotenv()
 
 
 def _oracle_dsn_for_thin_mode(dsn: str) -> str:

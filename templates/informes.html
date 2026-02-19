@@ -3,19 +3,85 @@
 
 {% block extra_css %}
 <style>
-    .informes-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
-    @media (max-width: 992px) { .informes-grid { grid-template-columns: 1fr; } }
-    .report-card { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .report-card .card-header { background: #d35400; color: #fff; font-weight: 600; padding: 0.5rem 0.75rem; font-size: 0.95rem; }
+    .informes-layout { display: flex; gap: 0; min-height: 60vh; }
+    .informes-sidebar {
+        width: 220px;
+        min-width: 220px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        padding: 0.5rem 0;
+        margin-right: 1rem;
+    }
+    .informes-sidebar .nav-link {
+        color: #333;
+        padding: 0.6rem 1rem;
+        border-left: 3px solid transparent;
+        border-radius: 0 6px 6px 0;
+    }
+    .informes-sidebar .nav-link:hover { background: #ffe0c0; color: #d35400; }
+    .informes-sidebar .nav-link.active {
+        background: #e67e22;
+        color: #fff;
+        border-left-color: #d35400;
+        font-weight: 600;
+    }
+    .informes-content { flex: 1; min-width: 0; }
+    .informe-panel { display: none; }
+    .informe-panel.active { display: block; }
+    .report-card {
+        background: #fff;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .report-card .card-header {
+        background: #d35400;
+        color: #fff;
+        font-weight: 600;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.95rem;
+    }
     .report-card .table { margin: 0; font-size: 0.9rem; }
     .report-card .table th { background: #e67e22; color: #fff; white-space: nowrap; padding: 0.4rem 0.6rem; }
     .report-card .table td { padding: 0.4rem 0.6rem; }
-    .report-card .table-responsive { max-height: 320px; overflow-y: auto; }
+    .report-card .table-responsive { max-height: 70vh; overflow-y: auto; }
+    .report-card .card-body { padding: 1rem; }
+    .export-btn {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        background: #fff;
+        color: #d35400;
+        border: 1px solid #d35400;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        text-decoration: none;
+    }
+    .export-btn:hover {
+        background: #d35400;
+        color: #fff;
+    }
+    .report-card { position: relative; }
+    @media (max-width: 768px) {
+        .informes-layout { flex-direction: column; }
+        .informes-sidebar {
+            width: 100%;
+            min-width: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+            padding: 0.5rem;
+        }
+        .informes-sidebar .nav-link { border-left: none; border-bottom: 3px solid transparent; border-radius: 6px; }
+        .informes-sidebar .nav-link.active { border-left: none; border-bottom-color: #d35400; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<h5 class="mb-4">Informes DEF_JOB</h5>
+<h5 class="mb-4">Informes</h5>
 
 {% if error %}
 <div class="alert alert-danger alert-dismissible fade show" role="alert">
@@ -23,83 +89,235 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% else %}
-<div class="informes-grid">
-    <div class="report-card">
-        <div class="card-header">Por NODE_ID</div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover table-sm mb-0">
-                <thead><tr>
-                    {% if report_node %}{% for key in report_node[0].keys() %}<th>{{ key }}</th>{% endfor %}
-                    {% else %}<th>NODE_ID</th><th>TOTAL</th>{% endif %}
-                </tr></thead>
-                <tbody>
-                    {% for row in report_node %}
-                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
-                    {% else %}
-                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+<div class="informes-layout">
+    <nav class="informes-sidebar">
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link active" href="#" data-informe="node">Por AGENTE</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-informe="app">Por APPLICATION</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-informe="task">Por TASK_TYPE</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-informe="owner">Por RUNAS</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-informe="nodegroups">Node Groups</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-informe="variables_globales">Variables Globales</a>
+            </li>
+        </ul>
+    </nav>
 
-    <div class="report-card">
-        <div class="card-header">Por APPLICATION</div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover table-sm mb-0">
-                <thead><tr>
-                    {% if report_app %}{% for key in report_app[0].keys() %}<th>{{ key }}</th>{% endfor %}
-                    {% else %}<th>APPLICATION</th><th>TOTAL</th>{% endif %}
-                </tr></thead>
-                <tbody>
-                    {% for row in report_app %}
-                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
-                    {% else %}
-                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <div class="informes-content">
+        <div id="panel-node" class="informe-panel active">
+            <div class="report-card">
+                <a href="{{ url_for('export_csv') }}" class="export-btn" onclick="setActiveInforme('node'); return true;">Exportar CSV</a>
+                <div class="card-header">Por AGENTE</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm mb-0">
+                        <thead><tr>
+                            {% if report_node %}{% for key in report_node[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            {% else %}<th>NODE_ID</th><th>TOTAL</th>{% endif %}
+                        </tr></thead>
+                        <tbody>
+                            {% for row in report_node %}
+                            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-    </div>
 
-    <div class="report-card">
-        <div class="card-header">Por TASK_TYPE</div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover table-sm mb-0">
-                <thead><tr>
-                    {% if report_task %}{% for key in report_task[0].keys() %}<th>{{ key }}</th>{% endfor %}
-                    {% else %}<th>TASK_TYPE</th><th>TOTAL</th>{% endif %}
-                </tr></thead>
-                <tbody>
-                    {% for row in report_task %}
-                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
-                    {% else %}
-                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div id="panel-app" class="informe-panel">
+            <div class="report-card">
+                <a href="{{ url_for('export_csv') }}" class="export-btn" onclick="setActiveInforme('app'); return true;">Exportar CSV</a>
+                <div class="card-header">Por APPLICATION</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm mb-0">
+                        <thead><tr>
+                            {% if report_app %}{% for key in report_app[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            {% else %}<th>APPLICATION</th><th>TOTAL</th>{% endif %}
+                        </tr></thead>
+                        <tbody>
+                            {% for row in report_app %}
+                            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-    </div>
 
-    <div class="report-card">
-        <div class="card-header">Por OWNER</div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover table-sm mb-0">
-                <thead><tr>
-                    {% if report_owner %}{% for key in report_owner[0].keys() %}<th>{{ key }}</th>{% endfor %}
-                    {% else %}<th>OWNER</th><th>TOTAL</th>{% endif %}
-                </tr></thead>
-                <tbody>
-                    {% for row in report_owner %}
-                    <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+        <div id="panel-task" class="informe-panel">
+            <div class="report-card">
+                <a href="{{ url_for('export_csv') }}" class="export-btn" onclick="setActiveInforme('task'); return true;">Exportar CSV</a>
+                <div class="card-header">Por TASK_TYPE</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm mb-0">
+                        <thead><tr>
+                            {% if report_task %}{% for key in report_task[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            {% else %}<th>TASK_TYPE</th><th>TOTAL</th>{% endif %}
+                        </tr></thead>
+                        <tbody>
+                            {% for row in report_task %}
+                            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="panel-owner" class="informe-panel">
+            <div class="report-card">
+                <a href="{{ url_for('export_csv') }}" class="export-btn" onclick="setActiveInforme('owner'); return true;">Exportar CSV</a>
+                <div class="card-header">Por RUNAS</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm mb-0">
+                        <thead><tr>
+                            {% if report_owner %}{% for key in report_owner[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            {% else %}<th>RUNAS</th><th>TOTAL</th>{% endif %}
+                        </tr></thead>
+                        <tbody>
+                            {% for row in report_owner %}
+                            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="panel-nodegroups" class="informe-panel">
+            <div class="report-card">
+                <a href="{{ url_for('export_csv') }}" class="export-btn" onclick="setActiveInforme('nodegroups'); return true;">Exportar CSV</a>
+                <div class="card-header">Node Groups</div>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm mb-0">
+                        <thead><tr>
+                            {% if report_node_groups %}{% for key in report_node_groups[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            {% else %}<th>GRPNAME</th><th>NODEID</th>{% endif %}
+                        </tr></thead>
+                        <tbody>
+                            {% for row in report_node_groups %}
+                            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="panel-variables_globales" class="informe-panel">
+            <div class="report-card">
+                {% if report_variables_globales %}
+                <a href="{{ url_for('export_csv') }}" class="export-btn" onclick="setActiveInforme('variables_globales'); return true;">Exportar CSV</a>
+                {% endif %}
+                <div class="card-header">Variables Globales</div>
+                <div class="card-body">
+                    <form method="post" action="{{ url_for('informes') }}" class="mb-3">
+                        <div class="row g-2">
+                            <div class="col-md-8">
+                                <input type="text" class="form-control" name="var_global" placeholder="Nombre de la variable" value="{{ var_global_search }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <button type="submit" class="btn btn-primary w-100">Buscar</button>
+                            </div>
+                        </div>
+                    </form>
+                    {% if var_global_search %}
+                    <p class="count-msg mb-2">
+                        {% if report_variables_globales %}{{ report_variables_globales|length }} registros encontrados.{% else %}No hay registros para mostrar.{% endif %}
+                    </p>
+                    {% endif %}
+                    {% if report_variables_globales %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover table-sm mb-0">
+                            <thead><tr>
+                                {% for key in report_variables_globales[0].keys() %}<th>{{ key }}</th>{% endfor %}
+                            </tr></thead>
+                            <tbody>
+                                {% for row in report_variables_globales %}
+                                <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% elif var_global_search %}
+                    <p class="text-muted">Sin resultados para "{{ var_global_search }}".</p>
                     {% else %}
-                    <tr><td colspan="2" class="text-muted">Sin datos</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    <p class="text-muted">Ingrese el nombre de la variable para buscar.</p>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+function setActiveInforme(informeType) {
+    fetch('{{ url_for("set_active_informe") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ informe_type: informeType })
+    }).catch(function(err) {
+        console.error('Error al actualizar informe activo:', err);
+    });
+}
+
+(function() {
+    var links = document.querySelectorAll('.informes-sidebar .nav-link[data-informe]');
+    var panels = document.querySelectorAll('.informe-panel');
+    
+    // Si hay una búsqueda de variables globales (con o sin resultados), mostrar ese panel
+    {% if var_global_search %}
+    var varsPanel = document.getElementById('panel-variables_globales');
+    var varsLink = document.querySelector('[data-informe="variables_globales"]');
+    if (varsPanel && varsLink) {
+        links.forEach(function(l) { l.classList.remove('active'); });
+        panels.forEach(function(p) { p.classList.remove('active'); });
+        varsLink.classList.add('active');
+        varsPanel.classList.add('active');
+        setActiveInforme('variables_globales');
+    }
+    {% else %}
+    // Establecer el informe inicial activo solo si no hay búsqueda de variables globales
+    setActiveInforme('node');
+    {% endif %}
+    
+    links.forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            var id = link.getAttribute('data-informe');
+            links.forEach(function(l) { l.classList.remove('active'); });
+            link.classList.add('active');
+            panels.forEach(function(p) {
+                p.classList.toggle('active', p.id === 'panel-' + id);
+            });
+            // Actualizar el informe activo en la sesión
+            setActiveInforme(id);
+        });
+    });
+})();
+</script>
 {% endif %}
 
 <p class="mt-3">

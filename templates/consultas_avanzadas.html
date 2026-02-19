@@ -60,7 +60,7 @@
             {% endif %}
         </p>
         <div class="results-table table-responsive">
-            {% if results %}
+            {% if results and results|length > 0 %}
             <table class="table table-bordered table-hover table-sm">
                 <thead>
                     <tr>
@@ -79,6 +79,10 @@
                     {% endfor %}
                 </tbody>
             </table>
+            {% elif error %}
+            <div class="alert alert-danger">
+                {{ error }}
+            </div>
             {% else %}
             <p class="text-muted p-3">Elija un criterio y pulse Buscar.</p>
             {% endif %}

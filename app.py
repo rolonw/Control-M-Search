@@ -228,10 +228,34 @@ def api_search():
 
 @app.route("/export.csv")
 def export_csv():
-    """Exporta la última consulta guardada en sesión a CSV."""
-    results = session.get("last_results")
+    """Exporta la última consulta guardada en sesión a CSV (búsquedas o informes)."""
+    # Primero verificar si hay un informe activo
+    informe_data = session.get("last_informe_data")
+    informe_name = session.get("last_informe")
+    
+    if informe_data:
+        # Exportar informe
+        results = informe_data
+        filename_map = {
+            "node": "informe_node_id.csv",
+            "app": "informe_application.csv",
+            "task": "informe_task_type.csv",
+            "owner": "informe_owner.csv",
+            "nodegroups": "informe_node_groups.csv",
+            "variables_globales": "variables_globales.csv",
+        }
+        filename = filename_map.get(informe_name, "informe.csv")
+    else:
+        # Exportar búsqueda normal
+        results = session.get("last_results")
+        filename = "consulta.csv"
+    
     if not results:
-        return Response("No hay datos para exportar. Realice una búsqueda primero.", mimetype="text/plain", status=400)
+        return Response("No hay datos para exportar. Realice una búsqueda o seleccione un informe primero.", mimetype="text/plain", status=400)
+    
+    if len(results) == 0:
+        return Response("No hay datos para exportar.", mimetype="text/plain", status=400)
+    
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";")
     writer.writerow(list(results[0].keys()))
@@ -241,8 +265,21 @@ def export_csv():
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=consulta.csv"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@app.route("/set-active-informe", methods=["POST"])
+def set_active_informe():
+    """Actualiza el informe activo en la sesión para exportación."""
+    informe_type = request.json.get("informe_type")
+    informes_data = session.get("informes_data", {})
+    
+    if informe_type in informes_data:
+        session["last_informe"] = informe_type
+        session["last_informe_data"] = informes_data[informe_type]
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "Informe no encontrado"}), 400
 
 
 @app.route("/consultas-avanzadas")
@@ -253,8 +290,15 @@ def consultas_avanzadas():
 @app.route("/consultas-avanzadas/search", methods=["POST"])
 def consultas_avanzadas_search():
     results, error = _run_search()
-    session["last_results"] = _serialize_results(results) if results else []
-    count = len(results) if results else 0
+    # Serializar resultados antes de guardar en sesión y pasar al template
+    if results:
+        results = _serialize_results(results)
+        session["last_results"] = results
+        count = len(results)
+    else:
+        results = []
+        session["last_results"] = []
+        count = 0
     return render_template(
         "consultas_avanzadas.html",
         results=results,
@@ -263,14 +307,22 @@ def consultas_avanzadas_search():
     )
 
 
-@app.route("/informes")
+@app.route("/informes", methods=["GET", "POST"])
 def informes():
-    """Informes con 4 grids: NODE_ID, APPLICATION, TASK_TYPE, OWNER (conteos por grupo)."""
+    """Informes con 6 grids: NODE_ID, APPLICATION, TASK_TYPE, OWNER (conteos por grupo), Node Groups y Variables Globales."""
     error = None
     report_node = []
     report_app = []
     report_task = []
     report_owner = []
+    report_node_groups = []
+    report_variables_globales = []
+    var_global_search = ""
+    
+    # Manejar búsqueda de Variables Globales
+    if request.method == "POST":
+        var_global_search = request.form.get("var_global", "").strip()
+    
     try:
         report_node = db.get_data(
             "SELECT NODE_ID, COUNT(*) AS TOTAL FROM DEF_JOB GROUP BY NODE_ID ORDER BY 2 DESC"
@@ -284,11 +336,37 @@ def informes():
         report_owner = db.get_data(
             "SELECT OWNER, COUNT(*) AS TOTAL FROM DEF_JOB GROUP BY OWNER ORDER BY 2 DESC"
         )
+        report_node_groups = db.query_node_groups()
+        
+        # Si hay búsqueda de variables globales, ejecutarla
+        if var_global_search:
+            report_variables_globales = db.query_variables_globales(var_global_search)
+        
         # Serializar por si hay tipos no serializables (ej. Oracle)
         report_node = _serialize_results(report_node) if report_node else []
         report_app = _serialize_results(report_app) if report_app else []
         report_task = _serialize_results(report_task) if report_task else []
         report_owner = _serialize_results(report_owner) if report_owner else []
+        report_node_groups = _serialize_results(report_node_groups) if report_node_groups else []
+        report_variables_globales = _serialize_results(report_variables_globales) if report_variables_globales else []
+        
+        # Guardar todos los informes en sesión para exportación
+        session["informes_data"] = {
+            "node": report_node,
+            "app": report_app,
+            "task": report_task,
+            "owner": report_owner,
+            "nodegroups": report_node_groups,
+            "variables_globales": report_variables_globales,
+        }
+        # Por defecto, el informe activo es "node"
+        session["last_informe"] = "node"
+        session["last_informe_data"] = report_node
+        
+        # Si hay resultados de variables globales, guardarlos como activos
+        if report_variables_globales:
+            session["last_informe"] = "variables_globales"
+            session["last_informe_data"] = report_variables_globales
     except Exception as e:
         error = str(e)
     return render_template(
@@ -297,6 +375,9 @@ def informes():
         report_app=report_app,
         report_task=report_task,
         report_owner=report_owner,
+        report_node_groups=report_node_groups,
+        report_variables_globales=report_variables_globales,
+        var_global_search=var_global_search,
         error=error,
     )
 

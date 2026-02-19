@@ -1,0 +1,15 @@
+# Control-M Search - Dependencias Python
+# Aplicación web Flask para búsqueda y consultas en Control-M
+
+# Framework web
+Flask>=2.3.0,<3.0.0
+
+# Drivers de base de datos (instalar según el tipo de BD utilizado)
+# Para SQL Server
+pyodbc>=4.0.39
+
+# Para Oracle (python-oracledb reemplaza a cx_Oracle)
+oracledb>=1.4.0
+
+# Para PostgreSQL
+psycopg2-binary>=2.9.9
