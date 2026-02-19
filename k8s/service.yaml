@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: controlm-search-web-service
+  labels:
+    app: controlm-search-web
+spec:
+  type: ClusterIP  # Cambiar a LoadBalancer o NodePort si necesitas acceso externo
+  ports:
+  - port: 80
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  selector:
+    app: controlm-search-web
+  sessionAffinity: ClientIP  # Importante para mantener sesiones Flask
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # 3 horas
+
+---
+# Service alternativo para acceso externo (descomentar si es necesario)
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: controlm-search-web-external
+#   labels:
+#     app: controlm-search-web
+# spec:
+#   type: LoadBalancer  # o NodePort
+#   ports:
+#   - port: 80
+#     targetPort: 5000
+#     protocol: TCP
+#     name: http
+#   selector:
+#     app: controlm-search-web

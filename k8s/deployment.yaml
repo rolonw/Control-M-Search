@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controlm-search-web
+  labels:
+    app: controlm-search-web
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: controlm-search-web
+  template:
+    metadata:
+      labels:
+        app: controlm-search-web
+        version: v1
+    spec:
+      containers:
+      - name: controlm-search-web
+        image: controlm-search-web:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+          name: http
+          protocol: TCP
+        env:
+        # Variables de entorno para Flask
+        - name: FLASK_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: controlm-search-secrets
+              key: flask-secret-key
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: controlm-search-secrets
+              key: admin-password
+        - name: PORT
+          value: "5000"
+        - name: DB_TYPE
+          valueFrom:
+            configMapKeyRef:
+              name: controlm-search-config
+              key: db-type
+        # Montar configuración desde ConfigMap
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/db_config.json
+          subPath: db_config.json
+        - name: license-volume
+          mountPath: /app/license.json
+          subPath: license.json
+        - name: data-volume
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /about
+            port: 5000
+          initialDelaySeconds: 40
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /about
+            port: 5000
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: config-volume
+        configMap:
+          name: controlm-search-config
+      - name: license-volume
+        secret:
+          secretName: controlm-search-secrets
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: controlm-search-pvc
+      # Si necesitas conectarte a bases de datos en otros namespaces o servicios
+      # asegúrate de que el DNS de Kubernetes pueda resolverlos

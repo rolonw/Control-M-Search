@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Configuración de BD (contiene credenciales - se debe proporcionar en runtime)
+db_config.json
+db_settings.json
+
+# Licencia (se debe proporcionar en runtime)
+license.json
+generate_license_key.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Kubernetes
+*.yaml
+*.yml
+k8s/
+
+# Documentación
+README.md
+*.md
+
+# Logs
+*.log

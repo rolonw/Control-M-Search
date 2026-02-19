@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: controlm-search-config
+  labels:
+    app: controlm-search-web
+data:
+  # Tipo de base de datos: oracle, mssql, postgresql
+  db-type: "oracle"
+  
+  # Configuración de base de datos (db_config.json)
+  # NOTA: Reemplaza estos valores con tu configuración real
+  db_config.json: |
+    {
+      "db_type": "oracle",
+      "ems": {
+        "host": "oracle-ems.example.com",
+        "port": 1521,
+        "service_name": "ORCL",
+        "sid": "",
+        "tns": "",
+        "user": "CTMEMS919WIN",
+        "password": "CHANGE_ME",
+        "database": "",
+        "driver": ""
+      },
+      "ctm": {
+        "host": "oracle-ctm.example.com",
+        "port": 1521,
+        "service_name": "ORCL",
+        "sid": "",
+        "tns": "",
+        "user": "CTMSRV919WIN",
+        "password": "CHANGE_ME",
+        "database": "",
+        "driver": ""
+      }
+    }
+  
+  # Ejemplo para SQL Server:
+  # db_config.json: |
+  #   {
+  #     "db_type": "mssql",
+  #     "ems": {
+  #       "host": "sqlserver-ems.example.com",
+  #       "port": 1433,
+  #       "service_name": "",
+  #       "sid": "",
+  #       "tns": "",
+  #       "user": "sa",
+  #       "password": "CHANGE_ME",
+  #       "database": "ControlM_EMS",
+  #       "driver": "ODBC Driver 17 for SQL Server"
+  #     },
+  #     "ctm": {
+  #       "host": "sqlserver-ctm.example.com",
+  #       "port": 1433,
+  #       "service_name": "",
+  #       "sid": "",
+  #       "tns": "",
+  #       "user": "sa",
+  #       "password": "CHANGE_ME",
+  #       "database": "ControlM_CTM",
+  #       "driver": "ODBC Driver 17 for SQL Server"
+  #     }
+  #   }
+  
+  # Ejemplo para PostgreSQL:
+  # db_config.json: |
+  #   {
+  #     "db_type": "postgresql",
+  #     "ems": {
+  #       "host": "postgres-ems.example.com",
+  #       "port": 5432,
+  #       "service_name": "",
+  #       "sid": "",
+  #       "tns": "",
+  #       "user": "controlm",
+  #       "password": "CHANGE_ME",
+  #       "database": "controlm_ems",
+  #       "driver": ""
+  #     },
+  #     "ctm": {
+  #       "host": "postgres-ctm.example.com",
+  #       "port": 5432,
+  #       "service_name": "",
+  #       "sid": "",
+  #       "tns": "",
+  #       "user": "controlm",
+  #       "password": "CHANGE_ME",
+  #       "database": "controlm_ctm",
+  #       "driver": ""
+  #     }
+  #   }

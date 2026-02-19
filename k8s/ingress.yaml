@@ -1,0 +1,58 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: controlm-search-web-ingress
+  labels:
+    app: controlm-search-web
+  annotations:
+    # Anotaciones comunes para Ingress
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"  # Para TLS automático
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # Para mantener sesiones Flask
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "controlm-search-session"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "10800"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "10800"
+spec:
+  ingressClassName: nginx  # Cambiar según tu controlador de Ingress
+  # TLS (descomentar y configurar cuando tengas certificados)
+  # tls:
+  # - hosts:
+  #   - controlm-search.example.com
+  #   secretName: controlm-search-tls
+  rules:
+  - host: controlm-search.example.com  # Cambiar por tu dominio
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: controlm-search-web-service
+            port:
+              number: 80
+
+---
+# Ejemplo alternativo sin host específico (para desarrollo)
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: controlm-search-web-ingress
+#   labels:
+#     app: controlm-search-web
+# spec:
+#   ingressClassName: nginx
+#   rules:
+#   - http:
+#       paths:
+#       - path: /
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: controlm-search-web-service
+#             port:
+#               number: 80
