@@ -2,23 +2,67 @@
 import csv
 import io
 import os
+import time
+import uuid
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response, session, url_for, abort, redirect
 import db
-from config import DB_TYPE
+from config import get_db_type
 from db_config_manager import load_config, update_config
 from odbc_utils import get_sql_server_drivers
 from license_manager import is_license_valid, get_valid_until, activate_license
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "controlm-search-web-2024-change-in-production")
-app.config["JSON_AS_ASCII"] = False
+# JSON: ensure_ascii=True evita que la cookie de sesión tenga bytes no ASCII y provoque
+# "ascii codec can't decode byte 0xf3" al leer la sesión. Las respuestas API siguen siendo correctas.
+app.config["JSON_AS_ASCII"] = True
 
 # Contraseña para /admin (cambiar en producción)
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
 # Rutas que no requieren licencia válida (solo admin puede entrar sin licencia)
 _LICENSE_EXEMPT = frozenset(["admin", "admin_login", "admin_logout", "license_expired", "static"])
+
+# Caché en servidor para resultados e informes (evita cookie >4KB)
+_RESULT_CACHE = {}
+_CACHE_MAX_ENTRIES = 200
+_CACHE_EXPIRE_SEC = 3600
+
+
+def _get_cache_sid():
+    if "_cache_sid" not in session:
+        session["_cache_sid"] = str(uuid.uuid4())
+    return session["_cache_sid"]
+
+
+def _cache_get(key, default=None):
+    sid = session.get("_cache_sid")
+    if not sid or sid not in _RESULT_CACHE:
+        return default
+    entry = _RESULT_CACHE[sid]
+    if time.time() - entry.get("ts", 0) > _CACHE_EXPIRE_SEC:
+        _RESULT_CACHE.pop(sid, None)
+        return default
+    return entry.get(key, default)
+
+
+def _cache_set(**kwargs):
+    sid = _get_cache_sid()
+    _RESULT_CACHE.setdefault(sid, {})["ts"] = time.time()
+    _RESULT_CACHE[sid].update(kwargs)
+    # Limpiar entradas antiguas o exceso (no tocar la sesión actual)
+    if len(_RESULT_CACHE) > _CACHE_MAX_ENTRIES:
+        by_ts = sorted(_RESULT_CACHE.items(), key=lambda x: x[1].get("ts", 0))
+        for old_sid, _ in by_ts[: _CACHE_MAX_ENTRIES // 2]:
+            if old_sid != sid:
+                _RESULT_CACHE.pop(old_sid, None)
+
+
+@app.template_filter("safe_text")
+def _filter_safe_text(s):
+    """En plantillas: convierte bytes a str UTF-8 para evitar 'ascii codec can't decode'."""
+    return _ensure_unicode(s) if s is not None else ""
 
 
 @app.before_request
@@ -51,12 +95,15 @@ def admin_required(f):
 
 
 def _serialize_results(results):
-    """Convierte resultados Oracle a listas/dicts serializables para sesión."""
+    """Convierte resultados a listas/dicts serializables para sesión (UTF-8 seguro)."""
     if not results:
         return []
     out = []
     for row in results:
-        out.append({k: (str(v) if v is not None else "") for k, v in row.items()})
+        out.append({
+            k: (v.decode("utf-8", errors="replace") if isinstance(v, bytes) else (str(v) if v is not None else ""))
+            for k, v in row.items()
+        })
     return out
 
 
@@ -85,106 +132,114 @@ def index():
     )
 
 
+def _ensure_unicode(s):
+    """Asegura que el valor sea str (unicode). Si viene en bytes, decodifica con UTF-8."""
+    if s is None:
+        return ""
+    if isinstance(s, bytes):
+        return s.decode("utf-8", errors="replace").strip()
+    return str(s).strip() if hasattr(s, "strip") else str(s)
+
+
 def _run_search():
     """Ejecuta la búsqueda según el tipo enviado en el formulario."""
     search_type = request.form.get("search_type") or request.args.get("search_type")
-    all_fields = request.form.get("all_fields") == "1" or request.args.get("all_fields") == "1"
     results = []
     error = None
     try:
         if search_type == "application":
-            v = request.form.get("application") or request.args.get("application", "").strip()
+            v = _ensure_unicode(request.form.get("application") or request.args.get("application") or "")
             if v:
                 results = db.query_by_application(v)
         elif search_type == "group":
-            v = request.form.get("group") or request.args.get("group", "").strip()
+            v = _ensure_unicode(request.form.get("group") or request.args.get("group") or "")
             if v:
                 results = db.query_by_group(v)
         elif search_type == "node_id":
-            v = request.form.get("node_id") or request.args.get("node_id", "").strip()
+            v = _ensure_unicode(request.form.get("node_id") or request.args.get("node_id") or "")
             if v:
-                results = db.query_by_node_id(v, all_fields=all_fields)
+                results = db.query_by_node_id(v)
         elif search_type == "jobname":
-            v = request.form.get("jobname") or request.args.get("jobname", "").strip()
+            v = _ensure_unicode(request.form.get("jobname") or request.args.get("jobname") or "")
             if v:
-                results = db.query_by_jobname(v.upper(), all_fields=all_fields)
+                results = db.query_by_jobname(v.upper())
         elif search_type == "description":
-            v = request.form.get("description") or request.args.get("description", "").strip()
+            v = _ensure_unicode(request.form.get("description") or request.args.get("description") or "")
             if v:
                 results = db.query_by_description(v)
         elif search_type == "tables":
-            v = request.form.get("tables") or request.args.get("tables", "").strip()
+            v = _ensure_unicode(request.form.get("tables") or request.args.get("tables") or "")
             if v:
-                results = db.query_by_tables(v, all_fields=all_fields)
+                results = db.query_by_tables(v)
         elif search_type == "script":
-            v = request.form.get("script") or request.args.get("script", "").strip()
+            v = _ensure_unicode(request.form.get("script") or request.args.get("script") or "")
             if v:
                 results = db.query_script_cmdline(v)
         elif search_type == "variables":
-            v = request.form.get("variables") or request.args.get("variables", "").strip()
+            v = _ensure_unicode(request.form.get("variables") or request.args.get("variables") or "")
             if v:
                 results = db.query_variables(v)
         elif search_type == "estadisticas":
-            v = request.form.get("estadisticas") or request.args.get("estadisticas", "").strip()
+            v = _ensure_unicode(request.form.get("estadisticas") or request.args.get("estadisticas") or "")
             if v:
                 results = db.query_estadisticas(v)
         elif search_type == "in_condition":
-            v = request.form.get("in_condition") or request.args.get("in_condition", "").strip()
+            v = _ensure_unicode(request.form.get("in_condition") or request.args.get("in_condition") or "")
             if v:
                 results = db.query_in_condition(v)
         elif search_type == "in_condition_job":
-            v = request.form.get("in_condition_job") or request.args.get("in_condition_job", "").strip()
+            v = _ensure_unicode(request.form.get("in_condition_job") or request.args.get("in_condition_job") or "")
             if v:
                 results = db.query_in_condition_jobname(v)
         elif search_type == "out_condition":
-            v = request.form.get("out_condition") or request.args.get("out_condition", "").strip()
+            v = _ensure_unicode(request.form.get("out_condition") or request.args.get("out_condition") or "")
             if v:
                 results = db.query_out_condition(v)
         elif search_type == "out_condition_job":
-            v = request.form.get("out_condition_job") or request.args.get("out_condition_job", "").strip()
+            v = _ensure_unicode(request.form.get("out_condition_job") or request.args.get("out_condition_job") or "")
             if v:
                 results = db.query_out_condition_jobname(v)
         elif search_type == "node_groups":
             results = db.query_node_groups()
         elif search_type == "variables_globales":
-            v = request.form.get("var_global") or request.args.get("var_global", "").strip()
+            v = _ensure_unicode(request.form.get("var_global") or request.args.get("var_global") or "")
             if v:
                 results = db.query_variables_globales(v)
         elif search_type == "unlock_tables":
-            v = request.form.get("table_unlock") or request.args.get("table_unlock", "").strip()
+            v = _ensure_unicode(request.form.get("table_unlock") or request.args.get("table_unlock") or "")
             if v:
                 results = db.unlock_tables(v)
         # Consultas avanzadas
         elif search_type == "aft_jobname":
-            v = request.form.get("aft_jobname") or request.args.get("aft_jobname", "").strip()
+            v = _ensure_unicode(request.form.get("aft_jobname") or request.args.get("aft_jobname") or "")
             if v:
                 results = db.query_aft_jobname(v)
         elif search_type == "aft_origendestino":
-            v = request.form.get("aft_origendestino") or request.args.get("aft_origendestino", "").strip()
+            v = _ensure_unicode(request.form.get("aft_origendestino") or request.args.get("aft_origendestino") or "")
             if v:
                 results = db.query_aft_origendestino(v)
         elif search_type == "sap_cm":
-            v = request.form.get("sap_cm") or request.args.get("sap_cm", "").strip()
+            v = _ensure_unicode(request.form.get("sap_cm") or request.args.get("sap_cm") or "")
             if v:
                 results = db.query_sap_jobname_cm(v)
         elif search_type == "sap_r3":
-            v = request.form.get("sap_r3") or request.args.get("sap_r3", "").strip()
+            v = _ensure_unicode(request.form.get("sap_r3") or request.args.get("sap_r3") or "")
             if v:
                 results = db.query_sap_jobname_r3(v)
         elif search_type == "bw_controlm":
-            v = request.form.get("bw_controlm") or request.args.get("bw_controlm", "").strip()
+            v = _ensure_unicode(request.form.get("bw_controlm") or request.args.get("bw_controlm") or "")
             if v:
                 results = db.query_bw_controlm(v)
         elif search_type == "bw_cadena":
-            v = request.form.get("bw_cadena") or request.args.get("bw_cadena", "").strip()
+            v = _ensure_unicode(request.form.get("bw_cadena") or request.args.get("bw_cadena") or "")
             if v:
                 results = db.query_bw_cadena_procesos(v)
         elif search_type == "os400_cmdline":
-            v = request.form.get("os400_cmdline") or request.args.get("os400_cmdline", "").strip()
+            v = _ensure_unicode(request.form.get("os400_cmdline") or request.args.get("os400_cmdline") or "")
             if v:
                 results = db.query_os400_cmdline(v)
         elif search_type == "os400_jobname":
-            v = request.form.get("os400_jobname") or request.args.get("os400_jobname", "").strip()
+            v = _ensure_unicode(request.form.get("os400_jobname") or request.args.get("os400_jobname") or "")
             if v:
                 results = db.query_os400_jobname_cm(v)
     except Exception as e:
@@ -204,7 +259,11 @@ def search():
             error = search_error
         elif not error:
             error = combo_error
-        session["last_results"] = _serialize_results(results) if results else []
+        _cache_set(
+            last_results=_serialize_results(results) if results else [],
+            last_informe_data=None,
+            last_informe=None,
+        )
     count = len(results) if results is not None else 0
     return render_template(
         "index.html",
@@ -228,13 +287,11 @@ def api_search():
 
 @app.route("/export.csv")
 def export_csv():
-    """Exporta la última consulta guardada en sesión a CSV (búsquedas o informes)."""
-    # Primero verificar si hay un informe activo
-    informe_data = session.get("last_informe_data")
-    informe_name = session.get("last_informe")
+    """Exporta la última consulta guardada en caché a CSV (búsquedas o informes)."""
+    informe_data = _cache_get("last_informe_data")
+    informe_name = _cache_get("last_informe")
     
     if informe_data:
-        # Exportar informe
         results = informe_data
         filename_map = {
             "node": "informe_node_id.csv",
@@ -246,8 +303,7 @@ def export_csv():
         }
         filename = filename_map.get(informe_name, "informe.csv")
     else:
-        # Exportar búsqueda normal
-        results = session.get("last_results")
+        results = _cache_get("last_results")
         filename = "consulta.csv"
     
     if not results:
@@ -271,13 +327,12 @@ def export_csv():
 
 @app.route("/set-active-informe", methods=["POST"])
 def set_active_informe():
-    """Actualiza el informe activo en la sesión para exportación."""
+    """Actualiza el informe activo en la caché para exportación."""
     informe_type = request.json.get("informe_type")
-    informes_data = session.get("informes_data", {})
+    informes_data = _cache_get("informes_data", {})
     
-    if informe_type in informes_data:
-        session["last_informe"] = informe_type
-        session["last_informe_data"] = informes_data[informe_type]
+    if informes_data and informe_type in informes_data:
+        _cache_set(last_informe=informe_type, last_informe_data=informes_data[informe_type])
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "Informe no encontrado"}), 400
 
@@ -293,11 +348,11 @@ def consultas_avanzadas_search():
     # Serializar resultados antes de guardar en sesión y pasar al template
     if results:
         results = _serialize_results(results)
-        session["last_results"] = results
+        _cache_set(last_results=results, last_informe_data=None, last_informe=None)
         count = len(results)
     else:
         results = []
-        session["last_results"] = []
+        _cache_set(last_results=[], last_informe_data=None, last_informe=None)
         count = 0
     return render_template(
         "consultas_avanzadas.html",
@@ -350,23 +405,21 @@ def informes():
         report_node_groups = _serialize_results(report_node_groups) if report_node_groups else []
         report_variables_globales = _serialize_results(report_variables_globales) if report_variables_globales else []
         
-        # Guardar todos los informes en sesión para exportación
-        session["informes_data"] = {
-            "node": report_node,
-            "app": report_app,
-            "task": report_task,
-            "owner": report_owner,
-            "nodegroups": report_node_groups,
-            "variables_globales": report_variables_globales,
-        }
-        # Por defecto, el informe activo es "node"
-        session["last_informe"] = "node"
-        session["last_informe_data"] = report_node
-        
-        # Si hay resultados de variables globales, guardarlos como activos
+        # Guardar todos los informes en caché para exportación
+        _cache_set(
+            informes_data={
+                "node": report_node,
+                "app": report_app,
+                "task": report_task,
+                "owner": report_owner,
+                "nodegroups": report_node_groups,
+                "variables_globales": report_variables_globales,
+            },
+            last_informe="node",
+            last_informe_data=report_node,
+        )
         if report_variables_globales:
-            session["last_informe"] = "variables_globales"
-            session["last_informe_data"] = report_variables_globales
+            _cache_set(last_informe="variables_globales", last_informe_data=report_variables_globales)
     except Exception as e:
         error = str(e)
     return render_template(
@@ -399,7 +452,7 @@ def variables_globales():
         if v:
             try:
                 results = db.query_variables_globales(v)
-                session["last_results"] = _serialize_results(results)
+                _cache_set(last_results=_serialize_results(results), last_informe_data=None, last_informe=None)
                 return render_template("util_result.html", results=results, count=len(results), error=None, title="Variables Globales")
             except Exception as e:
                 return render_template("util_result.html", results=[], count=0, error=str(e), title="Variables Globales")
@@ -413,7 +466,7 @@ def unlock_tables():
         if v:
             try:
                 results = db.unlock_tables(v)
-                session["last_results"] = _serialize_results(results)
+                _cache_set(last_results=_serialize_results(results), last_informe_data=None, last_informe=None)
                 return render_template("util_result.html", results=results, count=len(results), error=None, title="Unlock Tables")
             except Exception as e:
                 return render_template("util_result.html", results=[], count=0, error=str(e), title="Unlock Tables")
@@ -427,7 +480,7 @@ def about():
     ctm_info = f"{config['ctm']['host']}:{config['ctm']['port']}"
     return render_template(
         "about.html",
-        db_type=DB_TYPE.upper(),
+        db_type=get_db_type().upper(),
         server_ems=ems_info,
         server_ctm=ctm_info,
     )
@@ -478,11 +531,13 @@ def admin():
                     "database": request.form.get("ctm_database", "").strip(),
                     "driver": request.form.get("ctm_driver", "").strip(),
                 }
-                if update_config(db_type, ems_config, ctm_config):
+                ok, err_msg = update_config(db_type, ems_config, ctm_config)
+                if ok:
                     success = True
                     config = load_config()
+                    db.reset_engines()
                 else:
-                    error = "Error al guardar la configuración."
+                    error = err_msg or "Error al guardar la configuración."
             except Exception as e:
                 error = f"Error: {str(e)}"
 

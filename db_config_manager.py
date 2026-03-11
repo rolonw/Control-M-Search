@@ -42,14 +42,20 @@ def load_config() -> Dict:
     }
 
 
-def save_config(config: Dict) -> bool:
-    """Guarda la configuración en el archivo JSON."""
+def save_config(config: Dict) -> tuple[bool, Optional[str]]:
+    """Guarda la configuración en el archivo JSON. Retorna (éxito, mensaje_error)."""
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
-        return True
-    except Exception:
-        return False
+        return True, None
+    except PermissionError as e:
+        return False, "Sin permiso de escritura. En Docker, monte db_config.json sin :ro para poder guardar desde /admin."
+    except OSError as e:
+        if getattr(e, "errno", None) == 30:  # Read-only file system
+            return False, "Archivo de solo lectura. En Docker, monte el volumen sin :ro."
+        return False, str(e)
+    except Exception as e:
+        return False, str(e)
 
 
 def get_config() -> Dict:
@@ -57,8 +63,8 @@ def get_config() -> Dict:
     return load_config()
 
 
-def update_config(db_type: str, ems_config: Dict, ctm_config: Dict) -> bool:
-    """Actualiza la configuración completa."""
+def update_config(db_type: str, ems_config: Dict, ctm_config: Dict) -> tuple[bool, Optional[str]]:
+    """Actualiza la configuración completa. Retorna (éxito, mensaje_error)."""
     config = {
         "db_type": db_type.lower(),
         "ems": ems_config,

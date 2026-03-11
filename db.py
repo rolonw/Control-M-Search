@@ -1,333 +1,277 @@
-# db.py - Acceso a base de datos (Oracle, MSSQL, PostgreSQL)
-from config import DB_TYPE, get_ems_connect_params, get_ctm_connect_params
+# db.py - Acceso a base de datos con SQLAlchemy (Oracle, MSSQL, PostgreSQL)
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy import event
 
-# Importar drivers según el tipo de BD
-if DB_TYPE == "oracle":
-    import oracledb as db_driver
-elif DB_TYPE == "mssql":
-    import pyodbc as db_driver
-elif DB_TYPE == "postgresql":
-    import psycopg2 as db_driver
-else:
-    raise ValueError(f"Tipo de BD no soportado: {DB_TYPE}")
+from config import get_db_type, get_ems_sqlalchemy_url, get_ctm_sqlalchemy_url
 
 
-def _run_query(connect_params, sql, params=None):
-    """Ejecuta una consulta y devuelve lista de dicts (columnas como keys)."""
-    if DB_TYPE == "oracle":
-        conn = db_driver.connect(**connect_params)
-        try:
-            cur = conn.cursor()
-            if params:
-                cur.execute(sql, params)
-            else:
-                cur.execute(sql)
-            columns = [c[0] for c in cur.description]
-            rows = cur.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
-        finally:
-            conn.close()
-    elif DB_TYPE == "mssql":
-        # pyodbc usa connection string
-        conn_str = (
-            f"DRIVER={{{connect_params['driver']}}};"
-            f"SERVER={connect_params['server']},{connect_params['port']};"
-            f"DATABASE={connect_params['database']};"
-            f"UID={connect_params['user']};"
-            f"PWD={connect_params['password']}"
-        )
-        conn = db_driver.connect(conn_str)
-        try:
-            cur = conn.cursor()
-            if params:
-                # pyodbc usa ? como placeholder, convertir :nombre a ?
-                import re
-                sql_mssql = sql
-                if isinstance(params, dict):
-                    param_list = []
-                    for key, value in params.items():
-                        sql_mssql = sql_mssql.replace(f":{key}", "?", 1)
-                        param_list.append(value)
-                else:
-                    sql_mssql = re.sub(r":\w+", "?", sql)
-                    param_list = params
-                cur.execute(sql_mssql, param_list)
-            else:
-                cur.execute(sql)
-            columns = [col[0] for col in cur.description]
-            rows = cur.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
-        finally:
-            conn.close()
-    elif DB_TYPE == "postgresql":
-        conn = db_driver.connect(**connect_params)
-        try:
-            cur = conn.cursor()
-            if params:
-                # psycopg2 usa %s como placeholder, convertir :nombre a %s
-                sql_psql = sql
-                if isinstance(params, dict):
-                    # Reemplazar placeholders nombrados por %s y mantener orden
-                    param_list = []
-                    import re
-                    for key, value in params.items():
-                        sql_psql = sql_psql.replace(f":{key}", "%s", 1)
-                        param_list.append(value)
-                else:
-                    # Ya es una lista, solo reemplazar : por %s
-                    sql_psql = re.sub(r":\w+", "%s", sql)
-                    param_list = params
-                cur.execute(sql_psql, param_list)
-            else:
-                cur.execute(sql)
-            columns = [desc[0] for desc in cur.description]
-            rows = cur.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
-        finally:
-            conn.close()
+def _to_unicode(v):
+    """Convierte un valor de BD a str UTF-8. Evita errores 'ascii codec can't decode' (p. ej. ó, ñ en PostgreSQL)."""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, bytes):
+        return v.decode("utf-8", errors="replace")
+    if isinstance(v, memoryview):
+        return bytes(v).decode("utf-8", errors="replace")
+    try:
+        return str(v)
+    except Exception:
+        return ""
+
+# Motores SQLAlchemy (se crean bajo demanda para usar la config actual)
+_engine_ems: "Engine | None" = None
+_engine_ctm: "Engine | None" = None
 
 
-def _run_execute(connect_params, sql, params=None):
+def reset_engines() -> None:
+    """Invalida los motores para que se recreen con la config actual (p. ej. tras guardar en /admin)."""
+    global _engine_ems, _engine_ctm
+    if _engine_ems is not None:
+        _engine_ems.dispose()
+    if _engine_ctm is not None:
+        _engine_ctm.dispose()
+    _engine_ems = None
+    _engine_ctm = None
+
+
+def _pg_set_encoding(dbapi_connection, connection_record):
+    """Fuerza UTF-8 en conexiones PostgreSQL para evitar 'ascii codec can't decode byte 0xf3'."""
+    if hasattr(dbapi_connection, "set_client_encoding"):
+        dbapi_connection.set_client_encoding("UTF8")
+
+
+def _get_engine_ems() -> Engine:
+    global _engine_ems
+    if _engine_ems is None:
+        url = get_ems_sqlalchemy_url()
+        kwargs = {"pool_pre_ping": True, "pool_recycle": 300}
+        # Oracle (oracledb) no acepta 'encoding' en connect(); PostgreSQL sí usa client_encoding
+        if url.startswith("postgresql"):
+            kwargs["connect_args"] = {"options": "-c client_encoding=UTF8"}
+        _engine_ems = create_engine(url, **kwargs)
+        if url.startswith("postgresql"):
+            event.listen(_engine_ems, "connect", _pg_set_encoding)
+    return _engine_ems
+
+
+def _get_engine_ctm() -> Engine:
+    global _engine_ctm
+    if _engine_ctm is None:
+        url = get_ctm_sqlalchemy_url()
+        kwargs = {"pool_pre_ping": True, "pool_recycle": 300}
+        # Oracle (oracledb) no acepta 'encoding' en connect(); PostgreSQL sí usa client_encoding
+        if url.startswith("postgresql"):
+            kwargs["connect_args"] = {"options": "-c client_encoding=UTF8"}
+        _engine_ctm = create_engine(url, **kwargs)
+        if url.startswith("postgresql"):
+            event.listen(_engine_ctm, "connect", _pg_set_encoding)
+    return _engine_ctm
+
+
+def _run_query(engine: Engine, sql: str, params: dict | list | None = None) -> list[dict]:
+    """Ejecuta una consulta SELECT y devuelve lista de dicts (columnas como keys). Valores en UTF-8 str."""
+    with engine.connect() as conn:
+        result = conn.execute(text(sql), params or {})
+        columns = result.keys()
+        rows = result.fetchall()
+        return [
+            {c: _to_unicode(val) for c, val in zip(columns, row)}
+            for row in rows
+        ]
+
+
+def _run_execute(engine: Engine, sql: str, params: dict | list | None = None) -> None:
     """Ejecuta UPDATE/INSERT/DELETE y hace commit."""
-    if DB_TYPE == "oracle":
-        conn = db_driver.connect(**connect_params)
-        try:
-            cur = conn.cursor()
-            if params:
-                cur.execute(sql, params)
-            else:
-                cur.execute(sql)
-            conn.commit()
-        finally:
-            conn.close()
-    elif DB_TYPE == "mssql":
-        conn_str = (
-            f"DRIVER={{{connect_params['driver']}}};"
-            f"SERVER={connect_params['server']},{connect_params['port']};"
-            f"DATABASE={connect_params['database']};"
-            f"UID={connect_params['user']};"
-            f"PWD={connect_params['password']}"
-        )
-        conn = db_driver.connect(conn_str)
-        try:
-            cur = conn.cursor()
-            if params:
-                import re
-                sql_mssql = sql
-                if isinstance(params, dict):
-                    param_list = []
-                    for key, value in params.items():
-                        sql_mssql = sql_mssql.replace(f":{key}", "?", 1)
-                        param_list.append(value)
-                else:
-                    sql_mssql = re.sub(r":\w+", "?", sql)
-                    param_list = params
-                cur.execute(sql_mssql, param_list)
-            else:
-                cur.execute(sql)
-            conn.commit()
-        finally:
-            conn.close()
-    elif DB_TYPE == "postgresql":
-        conn = db_driver.connect(**connect_params)
-        try:
-            cur = conn.cursor()
-            if params:
-                sql_psql = sql
-                if isinstance(params, dict):
-                    import re
-                    param_list = []
-                    for key, value in params.items():
-                        sql_psql = sql_psql.replace(f":{key}", "%s", 1)
-                        param_list.append(value)
-                else:
-                    import re
-                    sql_psql = re.sub(r":\w+", "%s", sql)
-                    param_list = params
-                cur.execute(sql_psql, param_list)
-            else:
-                cur.execute(sql)
-            conn.commit()
-        finally:
-            conn.close()
+    with engine.connect() as conn:
+        conn.execute(text(sql), params or {})
+        conn.commit()
 
 
-def get_data(sql, params=None):
-    return _run_query(get_ems_connect_params(), sql, params)
+def get_data(sql: str, params: dict | list | None = None) -> list[dict]:
+    return _run_query(_get_engine_ems(), sql, params)
 
 
-def get_data_ctm(sql, params=None):
-    return _run_query(get_ctm_connect_params(), sql, params)
+def get_data_ctm(sql: str, params: dict | None = None) -> list[dict]:
+    return _run_query(_get_engine_ctm(), sql, params)
 
 
-def execute_ems(sql, params=None):
-    _run_execute(get_ems_connect_params(), sql, params)
+def execute_ems(sql: str, params: dict | list | None = None) -> None:
+    _run_execute(_get_engine_ems(), sql, params)
 
 
-def get_combo_values(sql):
-    """Para llenar combos: APPLICATION, GROUP_NAME, NODE_ID."""
+def get_combo_values(sql: str) -> list[str]:
+    """Para llenar combos: APPLICATION, GROUP_NAME, NODE_ID. Valores ya en UTF-8."""
     rows = get_data(sql)
-    return [str(list(r.values())[0]) for r in rows]
+    return [_to_unicode(list(r.values())[0]) for r in rows]
 
 
 # --- Consultas principales (DataJob)
-def query_by_application(app):
+def query_by_application(app: str) -> list[dict]:
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, "
         "J.MEMNAME AS SCRIPT, J.DESCRIPTION, J.CMD_LINE, J.NODE_ID, J.CONFIRM_FLAG, J.DAYS_CAL, "
         "J.WEEKS_CAL, J.CYCLIC, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T WHERE J.TABLE_ID = T.TABLE_ID AND J.APPLICATION=:app",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID WHERE J.APPLICATION = :app",
         {"app": app},
     )
 
 
-def query_by_group(grp):
+def query_by_group(grp: str) -> list[dict]:
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, "
         "J.MEMNAME AS SCRIPT, J.DESCRIPTION, J.CMD_LINE, J.NODE_ID, J.CONFIRM_FLAG, J.DAYS_CAL, "
         "J.WEEKS_CAL, J.CYCLIC, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T WHERE J.TABLE_ID = T.TABLE_ID AND J.GROUP_NAME=:grp",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID WHERE J.GROUP_NAME = :grp",
         {"grp": grp},
     )
 
 
-def query_by_node_id(node_id, all_fields=False):
+def query_by_node_id(node_id: str, all_fields: bool = False) -> list[dict]:
     like = f"%{node_id}%"
     if all_fields:
         return get_data(
-            "SELECT J.*, T.USER_DAILY FROM DEF_JOB J, DEF_TABLES T "
-            "WHERE J.TABLE_ID = T.TABLE_ID AND J.NODE_ID LIKE :lik",
+            "SELECT J.*, T.USER_DAILY FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+            "WHERE J.NODE_ID LIKE :lik",
             {"lik": like},
         )
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, "
         "J.MEMNAME AS SCRIPT, J.DESCRIPTION, J.CMD_LINE, J.NODE_ID, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T WHERE J.TABLE_ID = T.TABLE_ID AND J.NODE_ID LIKE :lik",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID WHERE J.NODE_ID LIKE :lik",
         {"lik": like},
     )
 
 
-def query_by_jobname(jobname, all_fields=False):
+def query_by_jobname(jobname: str, all_fields: bool = False) -> list[dict]:
     like = f"%{jobname}%"
     if all_fields:
         return get_data(
-            "SELECT J.*, T.* FROM DEF_JOB J, DEF_TABLES T "
-            "WHERE J.TABLE_ID = T.TABLE_ID AND J.JOB_NAME LIKE :lik",
+            "SELECT J.*, T.* FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+            "WHERE J.JOB_NAME LIKE :lik",
             {"lik": like},
         )
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, "
         "J.MEMNAME AS SCRIPT, J.DESCRIPTION, J.CMD_LINE, J.NODE_ID, J.CONFIRM_FLAG, J.DAYS_CAL, "
         "J.WEEKS_CAL, J.CYCLIC, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T WHERE J.TABLE_ID = T.TABLE_ID AND J.JOB_NAME LIKE :lik",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID WHERE J.JOB_NAME LIKE :lik",
         {"lik": like},
     )
 
 
-def query_by_description(desc):
+def query_by_description(desc: str) -> list[dict]:
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, "
         "J.MEMNAME AS SCRIPT, J.DESCRIPTION, J.CMD_LINE, J.NODE_ID, J.CONFIRM_FLAG, J.DAYS_CAL, "
         "J.WEEKS_CAL, J.CYCLIC, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_TABLES T, DEF_JOB J WHERE J.TABLE_ID = T.TABLE_ID AND J.DESCRIPTION LIKE :lik ORDER BY J.MEMNAME",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "WHERE J.DESCRIPTION LIKE :lik ORDER BY J.MEMNAME",
         {"lik": f"%{desc}%"},
     )
 
 
-def query_by_tables(tbl, all_fields=False):
+def query_by_tables(tbl: str, all_fields: bool = False) -> list[dict]:
     like = f"%{tbl}%"
     if all_fields:
         return get_data(
-            "SELECT DEF_JOB.*, DEF_TABLES.* FROM DEF_JOB, DEF_TABLES "
-            "WHERE DEF_JOB.TABLE_ID = DEF_TABLES.TABLE_ID AND DEF_TABLES.SCHED_TABLE LIKE :lik",
+            "SELECT J.*, T.* FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+            "WHERE T.SCHED_TABLE LIKE :lik",
             {"lik": like},
         )
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, "
         "J.MEMNAME AS SCRIPT, J.DESCRIPTION, J.CMD_LINE, J.NODE_ID, J.CONFIRM_FLAG, J.DAYS_CAL, "
         "J.WEEKS_CAL, J.CYCLIC, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T WHERE J.TABLE_ID = T.TABLE_ID AND J.PARENT_TABLE LIKE :lik",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID WHERE J.PARENT_TABLE LIKE :lik",
         {"lik": like},
     )
 
 
-def query_in_condition(cond):
+def query_in_condition(cond: str) -> list[dict]:
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.JOB_NAME, J.MEMNAME AS SCRIPT, "
         "I.CONDITION AS IN_CONDITION, I.ODATE, I.AND_OR "
-        "FROM DEF_TABLES T, DEF_JOB J, DEF_LNKI_P I "
-        "WHERE T.TABLE_ID = J.TABLE_ID AND T.TABLE_ID = I.TABLE_ID AND J.JOB_ID = I.JOB_ID AND I.CONDITION LIKE :lik",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_LNKI_P I ON J.TABLE_ID = I.TABLE_ID AND J.JOB_ID = I.JOB_ID "
+        "WHERE I.CONDITION LIKE :lik",
         {"lik": f"%{cond}%"},
     )
 
 
-def query_in_condition_jobname(jobname):
+def query_in_condition_jobname(jobname: str) -> list[dict]:
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.JOB_NAME, J.MEMNAME AS SCRIPT, "
         "I.CONDITION AS IN_CONDITION, I.ODATE, I.AND_OR "
-        "FROM DEF_TABLES T, DEF_JOB J, DEF_LNKI_P I "
-        "WHERE T.TABLE_ID = J.TABLE_ID AND T.TABLE_ID = I.TABLE_ID AND J.JOB_ID = I.JOB_ID AND I.CONDITION LIKE :lik",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_LNKI_P I ON J.TABLE_ID = I.TABLE_ID AND J.JOB_ID = I.JOB_ID "
+        "WHERE I.CONDITION LIKE :lik",
         {"lik": f"%{jobname}%"},
     )
 
 
-def query_out_condition(cond):
+def query_out_condition(cond: str) -> list[dict]:
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.JOB_NAME, J.MEMNAME AS SCRIPT, "
         "O.CONDITION AS OUT_CONDITION, O.ODATE, O.SIGN "
-        "FROM DEF_TABLES T, DEF_JOB J, DEF_LNKO_P O "
-        "WHERE T.TABLE_ID = J.TABLE_ID AND T.TABLE_ID = O.TABLE_ID AND J.JOB_ID = O.JOB_ID AND O.CONDITION LIKE :lik",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_LNKO_P O ON J.TABLE_ID = O.TABLE_ID AND J.JOB_ID = O.JOB_ID "
+        "WHERE O.CONDITION LIKE :lik",
         {"lik": f"%{cond}%"},
     )
 
 
-def query_out_condition_jobname(jobname):
+def query_out_condition_jobname(jobname: str) -> list[dict]:
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.JOB_NAME, J.MEMNAME AS SCRIPT, "
         "O.CONDITION AS OUT_CONDITION, O.ODATE, O.SIGN "
-        "FROM DEF_TABLES T, DEF_JOB J, DEF_LNKO_P O "
-        "WHERE T.TABLE_ID = J.TABLE_ID AND T.TABLE_ID = O.TABLE_ID AND J.JOB_ID = O.JOB_ID AND J.MEMNAME LIKE :lik",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_LNKO_P O ON J.TABLE_ID = O.TABLE_ID AND J.JOB_ID = O.JOB_ID "
+        "WHERE J.MEMNAME LIKE :lik",
         {"lik": f"%{jobname}%"},
     )
 
 
-def query_estadisticas(job_mem):
-    if DB_TYPE == "oracle":
+def query_estadisticas(job_mem: str) -> list[dict]:
+    like = f"%{job_mem}%"
+    db_type = get_db_type()
+    if db_type == "oracle":
         return get_data(
-        "SELECT JOB_MEM_NAME AS JOB, START_TIME AS INICIO, END_TIME AS FIN, "
-        "TO_CHAR(TRUNC(RUN_TIME_SEC / 3600), 'FM00') || ':' || "
-        "TO_CHAR(TRUNC(MOD(RUN_TIME_SEC, 3600) / 60), 'FM00') || ':' || "
-        "TO_CHAR(MOD(RUN_TIME_SEC, 60), 'FM00') AS DURACION, "
-        "GROUP_NAME AS APLICACION, NODE_ID AS SERVIDOR, "
-        "CASE ENDED_STATUS WHEN 16 THEN 'Ended OK' WHEN 32 THEN 'Ended Not OK' ELSE 'Estado no conocido' END AS END_STATUS "
-        "FROM RUNINFO_HISTORY WHERE JOB_MEM_NAME LIKE :lik ORDER BY START_TIME DESC",
-        {"lik": f"%{job_mem}%"},
+            "SELECT JOB_MEM_NAME AS JOB, START_TIME AS INICIO, END_TIME AS FIN, "
+            "TO_CHAR(TRUNC(RUN_TIME_SEC / 3600), 'FM00') || ':' || "
+            "TO_CHAR(TRUNC(MOD(RUN_TIME_SEC, 3600) / 60), 'FM00') || ':' || "
+            "TO_CHAR(MOD(RUN_TIME_SEC, 60), 'FM00') AS DURACION, "
+            "GROUP_NAME AS APLICACION, NODE_ID AS SERVIDOR, "
+            "CASE ENDED_STATUS WHEN 16 THEN 'Ended OK' WHEN 32 THEN 'Ended Not OK' ELSE 'Estado no conocido' END AS END_STATUS "
+            "FROM RUNINFO_HISTORY WHERE JOB_MEM_NAME LIKE :lik ORDER BY START_TIME DESC",
+            {"lik": like},
         )
-    elif DB_TYPE == "mssql":
+    elif db_type == "mssql":
         return get_data(
-        "SELECT JOB_MEM_NAME AS JOB, START_TIME AS INICIO, END_TIME AS FIN, "
-        "CONVERT(varchar, DATEADD(SECOND, RUN_TIME_SEC, 0),108) AS DURACION, "
-        "GROUP_NAME AS APLICACION, NODE_ID AS SERVIDOR, "
-        "case ENDED_STATUS when 16 then 'Ended OK' when 32 then 'Ended Not OK' else 'Estado no conoicido' end as END_STATUS "
-        "FROM RUNINFO_HISTORY WHERE JOB_MEM_NAME LIKE :lik ORDER BY START_TIME DESC",
-        {"lik": f"%{job_mem}%"},
+            "SELECT JOB_MEM_NAME AS JOB, START_TIME AS INICIO, END_TIME AS FIN, "
+            "CONVERT(varchar, DATEADD(SECOND, RUN_TIME_SEC, 0),108) AS DURACION, "
+            "GROUP_NAME AS APLICACION, NODE_ID AS SERVIDOR, "
+            "case ENDED_STATUS when 16 then 'Ended OK' when 32 then 'Ended Not OK' else 'Estado no conoicido' end as END_STATUS "
+            "FROM RUNINFO_HISTORY WHERE JOB_MEM_NAME LIKE :lik ORDER BY START_TIME DESC",
+            {"lik": like},
         )
-    elif DB_TYPE == "postgresql":
+    elif db_type == "postgresql":
         return get_data(
-        "SELECT JOB_MEM_NAME AS JOB, START_TIME AS INICIO, END_TIME AS FIN, "
-        "TO_CHAR((RUN_TIME_SEC || ' second')::interval, 'HH24:MI:SS') AS DURACION, "
-        "GROUP_NAME AS APLICACION, NODE_ID AS SERVIDOR, "
-        "CASE ENDED_STATUS WHEN 16 THEN 'Ended OK' WHEN 32 THEN 'Ended Not OK' ELSE 'Estado no conocido' END AS END_STATUS "
-        "FROM RUNINFO_HISTORY WHERE JOB_MEM_NAME LIKE :lik ORDER BY START_TIME DESC",
-        {"lik": f"%{job_mem}%"},
+            "SELECT JOB_MEM_NAME AS JOB, START_TIME AS INICIO, END_TIME AS FIN, "
+            "TO_CHAR((RUN_TIME_SEC || ' second')::interval, 'HH24:MI:SS') AS DURACION, "
+            "GROUP_NAME AS APLICACION, NODE_ID AS SERVIDOR, "
+            "CASE ENDED_STATUS WHEN 16 THEN 'Ended OK' WHEN 32 THEN 'Ended Not OK' ELSE 'Estado no conocido' END AS END_STATUS "
+            "FROM RUNINFO_HISTORY WHERE JOB_MEM_NAME LIKE :lik ORDER BY START_TIME DESC",
+            {"lik": like},
         )
     else:
-        raise ValueError(f"Tipo de BD no soportado: {DB_TYPE}")
+        raise ValueError(f"Tipo de BD no soportado: {db_type}")
 
 
-
-def query_script_cmdline(text):
-    like = f"%{text}%"
+def query_script_cmdline(text_search: str) -> list[dict]:
+    like = f"%{text_search}%"
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, "
         "J.MEMNAME AS SCRIPT, J.CMD_LINE, J.DESCRIPTION, J.NODE_ID, J.CONFIRM_FLAG, J.DAYS_CAL, "
@@ -338,110 +282,124 @@ def query_script_cmdline(text):
     )
 
 
-def query_variables(var_text):
+def query_variables(var_text: str) -> list[dict]:
     like = f"%{var_text}%"
     return get_data(
         "SELECT T.DATA_CENTER, J.PARENT_TABLE, J.TASK_TYPE, J.JOB_NAME, S.NAME AS VAR_NAME, S.VALUE "
-        "FROM DEF_SETVAR S, DEF_JOB J, DEF_TABLES T "
-        "WHERE (J.JOB_ID=S.JOB_ID AND J.TABLE_ID=S.TABLE_ID) "
-        "AND (S.NAME LIKE :lik OR S.VALUE LIKE :lik2) ORDER BY S.NAME DESC",
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_SETVAR S ON J.JOB_ID = S.JOB_ID AND J.TABLE_ID = S.TABLE_ID "
+        "WHERE S.NAME LIKE :lik OR S.VALUE LIKE :lik2 ORDER BY S.NAME DESC",
         {"lik": like, "lik2": like},
     )
 
 
-def query_node_groups():
+def query_node_groups() -> list[dict]:
     return get_data_ctm("SELECT GRPNAME, NODEID FROM CMS_NODGRP ORDER BY 1")
 
 
-def query_variables_globales(var_name):
+def query_variables_globales(var_name: str) -> list[dict]:
+    if get_db_type() == "postgresql":
+        return get_data_ctm(
+            "SELECT var, varexpr FROM cmr_setvar WHERE var LIKE :lik ORDER BY var DESC",
+            {"lik": f"%{var_name}%"},
+        )
     return get_data_ctm(
         "SELECT VAR, VAREXPR FROM CMR_SETVAR WHERE VAR LIKE :lik ORDER BY VAR DESC",
         {"lik": f"%{var_name}%"},
     )
 
 
+def unlock_tables(table_unlock: str) -> list[dict]:
+    """Consulta relacionada con desbloqueo de tablas. Adaptar SQL según el motor de BD si es necesario."""
+    # Placeholder: devolver resultado vacío o consulta genérica según tu esquema
+    return get_data(
+        "SELECT :tab AS table_name FROM DEF_JOB WHERE 1=0",
+        {"tab": table_unlock},
+    )
+
+
 # --- Consultas avanzadas (AFT, SAP, BW, OS400)
-def query_aft_jobname(text):
+def query_aft_jobname(text_search: str) -> list[dict]:
     return get_data(
         "SELECT J.PARENT_TABLE, J.JOB_NAME, J.MEMNAME AS SCRIPT, J.DESCRIPTION, S.NAME, S.VALUE "
-        "FROM DEF_JOB J, DEF_TABLES T, DEF_SETVAR S "
-        "WHERE J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID AND J.TABLE_ID = T.TABLE_ID "
-        "AND S.NAME LIKE '%FTP-%PATH%' AND J.JOB_NAME LIKE :lik",
-        {"lik": f"%{text}%"},
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_SETVAR S ON J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
+        "WHERE S.NAME LIKE '%FTP-%PATH%' AND J.JOB_NAME LIKE :lik",
+        {"lik": f"%{text_search}%"},
     )
 
 
-def query_aft_origendestino(text):
+def query_aft_origendestino(text_search: str) -> list[dict]:
     return get_data(
         "SELECT J.PARENT_TABLE, J.JOB_NAME, J.MEMNAME AS SCRIPT, J.DESCRIPTION, S.NAME, S.VALUE "
-        "FROM DEF_JOB J, DEF_TABLES T, DEF_SETVAR S "
-        "WHERE J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID AND J.TABLE_ID = T.TABLE_ID "
-        "AND S.NAME LIKE '%FTP-%PATH%' AND S.VALUE LIKE :lik",
-        {"lik": f"%{text}%"},
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_SETVAR S ON J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
+        "WHERE S.NAME LIKE '%FTP-%PATH%' AND S.VALUE LIKE :lik",
+        {"lik": f"%{text_search}%"},
     )
 
 
-def query_sap_jobname_cm(text):
+def query_sap_jobname_cm(text_search: str) -> list[dict]:
     return get_data(
         "SELECT J.PARENT_TABLE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, J.MEMNAME AS SCRIPT, J.DESCRIPTION, "
         "J.NODE_ID, S.VALUE AS CMD_LINE, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T, DEF_SETVAR S "
-        "WHERE J.TABLE_ID = T.TABLE_ID AND J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
-        "AND S.NAME LIKE '%SAPR3-JOBNAME%' AND J.JOB_NAME LIKE :lik ORDER BY J.JOB_NAME",
-        {"lik": f"%{text}%"},
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_SETVAR S ON J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
+        "WHERE S.NAME LIKE '%SAPR3-JOBNAME%' AND J.JOB_NAME LIKE :lik ORDER BY J.JOB_NAME",
+        {"lik": f"%{text_search}%"},
     )
 
 
-def query_sap_jobname_r3(text):
+def query_sap_jobname_r3(text_search: str) -> list[dict]:
     return get_data(
         "SELECT J.PARENT_TABLE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, J.MEMNAME AS SCRIPT, J.DESCRIPTION, "
         "J.NODE_ID, S.VALUE AS CMD_LINE, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T, DEF_SETVAR S "
-        "WHERE J.TABLE_ID = T.TABLE_ID AND J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
-        "AND S.NAME LIKE '%SAPR3-JOBNAME%' AND S.VALUE LIKE :lik ORDER BY J.JOB_NAME",
-        {"lik": f"%{text}%"},
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_SETVAR S ON J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
+        "WHERE S.NAME LIKE '%SAPR3-JOBNAME%' AND S.VALUE LIKE :lik ORDER BY J.JOB_NAME",
+        {"lik": f"%{text_search}%"},
     )
 
 
-def query_bw_controlm(text):
+def query_bw_controlm(text_search: str) -> list[dict]:
     return get_data(
         "SELECT J.PARENT_TABLE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, J.MEMNAME AS SCRIPT, J.DESCRIPTION, "
         "S.VALUE AS CMD_LINE, J.NODE_ID, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T, DEF_SETVAR S "
-        "WHERE J.TABLE_ID = T.TABLE_ID AND J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
-        "AND S.NAME LIKE '%SAPR3-ProcessChain_ID%' AND J.JOB_NAME LIKE :lik ORDER BY J.JOB_NAME",
-        {"lik": f"%{text}%"},
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_SETVAR S ON J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
+        "WHERE S.NAME LIKE '%SAPR3-ProcessChain_ID%' AND J.JOB_NAME LIKE :lik ORDER BY J.JOB_NAME",
+        {"lik": f"%{text_search}%"},
     )
 
 
-def query_bw_cadena_procesos(text):
+def query_bw_cadena_procesos(text_search: str) -> list[dict]:
     return get_data(
         "SELECT J.PARENT_TABLE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, J.MEMNAME AS SCRIPT, J.DESCRIPTION, "
         "S.VALUE AS CMD_LINE, J.NODE_ID, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T, DEF_SETVAR S "
-        "WHERE J.TABLE_ID = T.TABLE_ID AND J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
-        "AND S.NAME LIKE '%SAPR3-ProcessChain_ID%' AND S.VALUE LIKE :lik ORDER BY J.JOB_NAME",
-        {"lik": f"%{text}%"},
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_SETVAR S ON J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
+        "WHERE S.NAME LIKE '%SAPR3-ProcessChain_ID%' AND S.VALUE LIKE :lik ORDER BY J.JOB_NAME",
+        {"lik": f"%{text_search}%"},
     )
 
 
-def query_os400_cmdline(text):
+def query_os400_cmdline(text_search: str) -> list[dict]:
     return get_data(
         "SELECT J.PARENT_TABLE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, J.MEMNAME AS SCRIPT, J.DESCRIPTION, "
         "J.NODE_ID, S.VALUE AS CMD_LINE, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T, DEF_SETVAR S "
-        "WHERE J.TABLE_ID = T.TABLE_ID AND J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
-        "AND S.VALUE LIKE :lik ORDER BY J.JOB_NAME",
-        {"lik": f"%{text}%"},
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_SETVAR S ON J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
+        "WHERE S.VALUE LIKE :lik ORDER BY J.JOB_NAME",
+        {"lik": f"%{text_search}%"},
     )
 
 
-def query_os400_jobname_cm(text):
+def query_os400_jobname_cm(text_search: str) -> list[dict]:
     return get_data(
         "SELECT J.PARENT_TABLE, J.APPLICATION, J.GROUP_NAME, J.JOB_NAME, J.MEMNAME AS SCRIPT, J.DESCRIPTION, "
         "J.NODE_ID, S.VALUE AS CMD_LINE, J.FROM_TIME, J.TO_TIME, T.USER_DAILY "
-        "FROM DEF_JOB J, DEF_TABLES T, DEF_SETVAR S "
-        "WHERE J.TABLE_ID = T.TABLE_ID AND J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
-        "AND S.NAME LIKE '%OS400-CMDLINE1%' AND J.JOB_NAME LIKE :lik ORDER BY J.JOB_NAME",
-        {"lik": f"%{text}%"},
+        "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
+        "INNER JOIN DEF_SETVAR S ON J.TABLE_ID = S.TABLE_ID AND J.JOB_ID = S.JOB_ID "
+        "WHERE S.NAME LIKE '%OS400-CMDLINE1%' AND J.JOB_NAME LIKE :lik ORDER BY J.JOB_NAME",
+        {"lik": f"%{text_search}%"},
     )

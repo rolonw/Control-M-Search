@@ -24,24 +24,20 @@
     <div class="col-md-3">
         <div class="panel-datajob p-3 mb-3">
             <h6 class="fw-bold mb-3">DataJob</h6>
-            <form method="post" action="{{ url_for('search') }}" id="formSearch">
+            <form method="post" action="{{ url_for('search') }}" id="formSearch" accept-charset="UTF-8">
                 <input type="hidden" name="search_type" id="search_type" value="">
-                <div class="form-check mb-2">
-                    <input class="form-check-input" type="checkbox" name="all_fields" value="1" id="all_fields">
-                    <label class="form-check-label" for="all_fields">Activar todos los campos</label>
-                </div>
                 <div class="form-row-inline">
                     <label class="form-label small" for="application">Aplicación</label>
                     <select class="form-select form-select-sm" name="application" id="application">
                         <option value="">-- Seleccione --</option>
-                        {% for a in apps %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+                        {% for a in apps %}<option value="{{ a|safe_text }}">{{ a|safe_text }}</option>{% endfor %}
                     </select>
                 </div>
                 <div class="form-row-inline">
                     <label class="form-label small" for="group">Sub Aplicación</label>
                     <select class="form-select form-select-sm" name="group" id="group">
                         <option value="">-- Seleccione --</option>
-                        {% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+                        {% for g in groups %}<option value="{{ g|safe_text }}">{{ g|safe_text }}</option>{% endfor %}
                     </select>
                 </div>
                 <div class="form-row-inline">
@@ -60,7 +56,7 @@
                     <label class="form-label small" for="node_id">Node ID</label>
                     <select class="form-select form-select-sm" name="node_id" id="node_id">
                         <option value="">-- Seleccione --</option>
-                        {% for n in nodes %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+                        {% for n in nodes %}<option value="{{ n|safe_text }}">{{ n|safe_text }}</option>{% endfor %}
                     </select>
                 </div>
                 <div class="form-row-inline">

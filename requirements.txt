@@ -4,6 +4,9 @@
 # Framework web
 Flask>=2.3.0,<3.0.0
 
+# ORM y acceso a BD
+SQLAlchemy>=2.0.0,<3.0.0
+
 # Drivers de base de datos (instalar según el tipo de BD utilizado)
 # Para SQL Server
 pyodbc>=4.0.39

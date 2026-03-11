@@ -4,6 +4,8 @@ Esta guía explica cómo desplegar Control-M Search Web usando Docker y Kubernet
 
 ## 🐳 Docker
 
+La imagen se construye sobre **AlmaLinux 9** (compatible con Red Hat Enterprise Linux) con **Python 3.11**, adecuada para entornos enterprise y políticas que exigen distribuciones tipo RHEL.
+
 ### Construcción de la imagen
 
 ```bash
@@ -16,16 +18,27 @@ docker images | grep controlm-search-web
 
 ### Ejecución con Docker
 
+**Linux/Mac (bash):**
 ```bash
-# Ejecutar el contenedor
 docker run -d \
   --name controlm-search-web \
   -p 5000:5000 \
-  -e FLASK_SECRET_KEY="tu-clave-secreta" \
-  -e ADMIN_PASSWORD="tu-password-admin" \
   -v $(pwd)/db_config.json:/app/db_config.json:ro \
   -v $(pwd)/license.json:/app/license.json:ro \
   controlm-search-web:latest
+```
+Para poder guardar cambios desde /admin (tipo de BD, conexión), monta `db_config.json` sin `:ro`: use `-v $(pwd)/db_config.json:/app/db_config.json` (sin `:ro`).
+
+**Windows (PowerShell):** usa `$PWD` en lugar de `%cd%` o `$(pwd)`:
+```powershell
+docker run -p 5000:5000 -v "${PWD}/db_config.json:/app/db_config.json:ro" -v "${PWD}/license.json:/app/license.json:ro" controlm-search-web:latest
+```
+
+**Permitir guardar configuración desde /admin:** si quieres cambiar el tipo de base de datos o la conexión desde la interfaz de administración dentro del contenedor, monta `db_config.json` **sin** `:ro` para que la app pueda escribir:
+```powershell
+docker run -p 5000:5000 -v "${PWD}/db_config.json:/app/db_config.json" -v "${PWD}/license.json:/app/license.json:ro" controlm-search-web:latest
+```
+(Sin `:ro` en el primer volumen; `license.json` puede seguir en solo lectura.)
 
 # Ver logs
 docker logs -f controlm-search-web
