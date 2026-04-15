@@ -24,7 +24,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 # Rutas que no requieren licencia válida (solo admin puede entrar sin licencia)
 _LICENSE_EXEMPT = frozenset(["admin", "admin_login", "admin_logout", "license_expired", "static"])
 
-# Caché en servidor para resultados e informes (evita cookie >4KB)
+# Caché en servidor para resultados de búsqueda (evita cookie >4KB)
 _RESULT_CACHE = {}
 _CACHE_MAX_ENTRIES = 200
 _CACHE_EXPIRE_SEC = 3600
@@ -259,11 +259,7 @@ def search():
             error = search_error
         elif not error:
             error = combo_error
-        _cache_set(
-            last_results=_serialize_results(results) if results else [],
-            last_informe_data=None,
-            last_informe=None,
-        )
+        _cache_set(last_results=_serialize_results(results) if results else [])
     count = len(results) if results is not None else 0
     return render_template(
         "index.html",
@@ -287,31 +283,16 @@ def api_search():
 
 @app.route("/export.csv")
 def export_csv():
-    """Exporta la última consulta guardada en caché a CSV (búsquedas o informes)."""
-    informe_data = _cache_get("last_informe_data")
-    informe_name = _cache_get("last_informe")
-    
-    if informe_data:
-        results = informe_data
-        filename_map = {
-            "node": "informe_node_id.csv",
-            "app": "informe_application.csv",
-            "task": "informe_task_type.csv",
-            "owner": "informe_owner.csv",
-            "nodegroups": "informe_node_groups.csv",
-            "variables_globales": "variables_globales.csv",
-        }
-        filename = filename_map.get(informe_name, "informe.csv")
-    else:
-        results = _cache_get("last_results")
-        filename = "consulta.csv"
-    
+    """Exporta la última consulta guardada en caché a CSV."""
+    results = _cache_get("last_results")
+    filename = "consulta.csv"
+
     if not results:
-        return Response("No hay datos para exportar. Realice una búsqueda o seleccione un informe primero.", mimetype="text/plain", status=400)
-    
+        return Response("No hay datos para exportar. Realice una búsqueda primero.", mimetype="text/plain", status=400)
+
     if len(results) == 0:
         return Response("No hay datos para exportar.", mimetype="text/plain", status=400)
-    
+
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";")
     writer.writerow(list(results[0].keys()))
@@ -325,18 +306,6 @@ def export_csv():
     )
 
 
-@app.route("/set-active-informe", methods=["POST"])
-def set_active_informe():
-    """Actualiza el informe activo en la caché para exportación."""
-    informe_type = request.json.get("informe_type")
-    informes_data = _cache_get("informes_data", {})
-    
-    if informes_data and informe_type in informes_data:
-        _cache_set(last_informe=informe_type, last_informe_data=informes_data[informe_type])
-        return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Informe no encontrado"}), 400
-
-
 @app.route("/consultas-avanzadas")
 def consultas_avanzadas():
     return render_template("consultas_avanzadas.html", results=None, count=None, error=None)
@@ -348,89 +317,16 @@ def consultas_avanzadas_search():
     # Serializar resultados antes de guardar en sesión y pasar al template
     if results:
         results = _serialize_results(results)
-        _cache_set(last_results=results, last_informe_data=None, last_informe=None)
+        _cache_set(last_results=results)
         count = len(results)
     else:
         results = []
-        _cache_set(last_results=[], last_informe_data=None, last_informe=None)
+        _cache_set(last_results=[])
         count = 0
     return render_template(
         "consultas_avanzadas.html",
         results=results,
         count=count,
-        error=error,
-    )
-
-
-@app.route("/informes", methods=["GET", "POST"])
-def informes():
-    """Informes con 6 grids: NODE_ID, APPLICATION, TASK_TYPE, OWNER (conteos por grupo), Node Groups y Variables Globales."""
-    error = None
-    report_node = []
-    report_app = []
-    report_task = []
-    report_owner = []
-    report_node_groups = []
-    report_variables_globales = []
-    var_global_search = ""
-    
-    # Manejar búsqueda de Variables Globales
-    if request.method == "POST":
-        var_global_search = request.form.get("var_global", "").strip()
-    
-    try:
-        report_node = db.get_data(
-            "SELECT NODE_ID, COUNT(*) AS TOTAL FROM DEF_JOB GROUP BY NODE_ID ORDER BY 2 DESC"
-        )
-        report_app = db.get_data(
-            "SELECT APPLICATION, COUNT(*) AS TOTAL FROM DEF_JOB GROUP BY APPLICATION ORDER BY 2 DESC"
-        )
-        report_task = db.get_data(
-            "SELECT TASK_TYPE, COUNT(*) AS TOTAL FROM DEF_JOB GROUP BY TASK_TYPE ORDER BY 2 DESC"
-        )
-        report_owner = db.get_data(
-            "SELECT OWNER, COUNT(*) AS TOTAL FROM DEF_JOB GROUP BY OWNER ORDER BY 2 DESC"
-        )
-        report_node_groups = db.query_node_groups()
-        
-        # Si hay búsqueda de variables globales, ejecutarla
-        if var_global_search:
-            report_variables_globales = db.query_variables_globales(var_global_search)
-        
-        # Serializar por si hay tipos no serializables (ej. Oracle)
-        report_node = _serialize_results(report_node) if report_node else []
-        report_app = _serialize_results(report_app) if report_app else []
-        report_task = _serialize_results(report_task) if report_task else []
-        report_owner = _serialize_results(report_owner) if report_owner else []
-        report_node_groups = _serialize_results(report_node_groups) if report_node_groups else []
-        report_variables_globales = _serialize_results(report_variables_globales) if report_variables_globales else []
-        
-        # Guardar todos los informes en caché para exportación
-        _cache_set(
-            informes_data={
-                "node": report_node,
-                "app": report_app,
-                "task": report_task,
-                "owner": report_owner,
-                "nodegroups": report_node_groups,
-                "variables_globales": report_variables_globales,
-            },
-            last_informe="node",
-            last_informe_data=report_node,
-        )
-        if report_variables_globales:
-            _cache_set(last_informe="variables_globales", last_informe_data=report_variables_globales)
-    except Exception as e:
-        error = str(e)
-    return render_template(
-        "informes.html",
-        report_node=report_node,
-        report_app=report_app,
-        report_task=report_task,
-        report_owner=report_owner,
-        report_node_groups=report_node_groups,
-        report_variables_globales=report_variables_globales,
-        var_global_search=var_global_search,
         error=error,
     )
 
@@ -452,7 +348,7 @@ def variables_globales():
         if v:
             try:
                 results = db.query_variables_globales(v)
-                _cache_set(last_results=_serialize_results(results), last_informe_data=None, last_informe=None)
+                _cache_set(last_results=_serialize_results(results))
                 return render_template("util_result.html", results=results, count=len(results), error=None, title="Variables Globales")
             except Exception as e:
                 return render_template("util_result.html", results=[], count=0, error=str(e), title="Variables Globales")
@@ -466,7 +362,7 @@ def unlock_tables():
         if v:
             try:
                 results = db.unlock_tables(v)
-                _cache_set(last_results=_serialize_results(results), last_informe_data=None, last_informe=None)
+                _cache_set(last_results=_serialize_results(results))
                 return render_template("util_result.html", results=results, count=len(results), error=None, title="Unlock Tables")
             except Exception as e:
                 return render_template("util_result.html", results=[], count=0, error=str(e), title="Unlock Tables")
