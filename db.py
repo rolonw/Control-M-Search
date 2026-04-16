@@ -207,7 +207,7 @@ def query_in_condition_jobname(jobname: str) -> list[dict]:
         "I.CONDITION AS IN_CONDITION, I.ODATE, I.AND_OR "
         "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
         "INNER JOIN DEF_LNKI_P I ON J.TABLE_ID = I.TABLE_ID AND J.JOB_ID = I.JOB_ID "
-        "WHERE I.CONDITION LIKE :lik",
+        "WHERE J.JOB_NAME LIKE :lik",
         {"lik": f"%{jobname}%"},
     )
 
@@ -229,7 +229,7 @@ def query_out_condition_jobname(jobname: str) -> list[dict]:
         "O.CONDITION AS OUT_CONDITION, O.ODATE, O.SIGN "
         "FROM DEF_JOB J INNER JOIN DEF_TABLES T ON J.TABLE_ID = T.TABLE_ID "
         "INNER JOIN DEF_LNKO_P O ON J.TABLE_ID = O.TABLE_ID AND J.JOB_ID = O.JOB_ID "
-        "WHERE J.MEMNAME LIKE :lik",
+        "WHERE J.JOB_NAME LIKE :lik",
         {"lik": f"%{jobname}%"},
     )
 
