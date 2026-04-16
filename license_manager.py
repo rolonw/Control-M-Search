@@ -12,9 +12,9 @@ LICENSE_FILE = "license.json"
 # Formato de clave: YYYY-MM-DD-<HMAC_SHA256(YYYY-MM-DD, secret) en hex>
 KEY_DATE_LEN = 10  # "YYYY-MM-DD"
 
-# Secreto para verificar claves. Sin LICENSE_SECRET en entorno se usa este valor.
-# El script generate_license_key.py importa _get_secret desde aquí para firmar con el mismo secreto.
-_DEFAULT_LICENSE_SECRET = "ControlM-Search-License-YPF"
+# Secreto: solo variable de entorno LICENSE_SECRET (no commitear el valor real).
+# Así, al publicar el código en abierto, nadie puede fabricar claves sin conocer ese secreto.
+# El script generate_license_key.py importa _get_secret desde aquí para usar el mismo criterio.
 
 
 def _path():
@@ -22,8 +22,8 @@ def _path():
 
 
 def _get_secret() -> str:
-    """Secreto para firmar/verificar claves. Por defecto el de código; opcionalmente LICENSE_SECRET en entorno."""
-    return (os.getenv("LICENSE_SECRET") or _DEFAULT_LICENSE_SECRET).strip()
+    """Secreto para firmar/verificar claves. Debe definirse LICENSE_SECRET en el entorno (mismo valor al generar y en la app)."""
+    return (os.getenv("LICENSE_SECRET") or "").strip()
 
 
 def _sign(expiry_iso: str) -> str:

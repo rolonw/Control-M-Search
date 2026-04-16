@@ -155,6 +155,7 @@ kubectl port-forward svc/controlm-search-web-service 8080:80
 
 - `FLASK_SECRET_KEY`: Clave secreta para sesiones Flask (cambiar en producción)
 - `ADMIN_PASSWORD`: Contraseña del panel de administración (cambiar en producción)
+- `LICENSE_SECRET`: Secreto para firmar/verificar claves de licencia (obligatorio; mismo valor que usas al ejecutar `generate_license_key.py`; no commitear)
 - `PORT`: Puerto donde escucha la aplicación (default: 5000)
 - `DB_TYPE`: Tipo de base de datos (oracle, mssql, postgresql)
 
@@ -173,7 +174,7 @@ Estos archivos se pueden proporcionar de varias formas:
 ### Recomendaciones para producción
 
 1. **Seguridad**:
-   - Cambiar `FLASK_SECRET_KEY` y `ADMIN_PASSWORD`
+   - Definir `LICENSE_SECRET` (licencias) y cambiar `FLASK_SECRET_KEY` y `ADMIN_PASSWORD`
    - Usar HTTPS/TLS
    - Configurar Network Policies en Kubernetes
    - No exponer secretos en repositorios

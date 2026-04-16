@@ -130,8 +130,8 @@ Accede a `/admin` para:
 ### Licencias (proveedor vs. cliente)
 
 - **En runtime**, la aplicación solo usa `license_manager.py`: verifica la clave guardada en `license.json` y la fecha de expiración. **No hace falta** `generate_license_key.py` en el servidor del cliente para validar.
-- **Generación de claves** (solo quien distribuye el software): ejecuta `python generate_license_key.py YYYY-MM-DD` o `python generate_license_key.py --years N`. Ese script importa la misma lógica de secreto que la app (`_get_secret` en `license_manager`) para firmar claves coherentes con la verificación.
-- **Secreto compartido**: por defecto está en código (`license_manager`); en producción puedes fijar **`LICENSE_SECRET`** en el entorno (mismo valor al generar claves y al ejecutar la app). Cambia el valor por defecto si distribuyes binarios o imágenes a terceros.
+- **Generación de claves** (solo quien distribuye el software): con **`LICENSE_SECRET`** definido en el entorno, ejecuta `python generate_license_key.py YYYY-MM-DD` o `python generate_license_key.py --years N`. El script usa `_get_secret` de `license_manager` (mismo criterio que la app).
+- **Secreto**: no hay secreto en el código fuente publicado. Debes definir **`LICENSE_SECRET`** (cadena larga y aleatoria) solo donde generas claves y en el despliegue del cliente (Docker/Kubernetes/variables de entorno). Sin ese valor, ninguna clave se considera válida.
 - **Docker**: `.dockerignore` excluye `generate_license_key.py` de la imagen, de modo que el contenedor del cliente no incluye el generador.
 
 
@@ -198,7 +198,7 @@ Ver **`DOCKER.md`**: construcción de imagen, variables de entorno, montaje de `
 - Los archivos `db_config.json` y `license.json` se crean automáticamente
 - En producción, cambiar la clave secreta de Flask y la contraseña de administración
 - El sistema de licencias valida la fecha en el servidor, no puede ser manipulado por el cliente
-- La clave de licencia se firma con HMAC; quien genera claves debe usar el mismo secreto que la app (`LICENSE_SECRET` o el valor por defecto en `license_manager`, según tu despliegue)
+- La clave de licencia se firma con HMAC; el valor de **`LICENSE_SECRET`** debe ser idéntico al generar la clave y al ejecutar la aplicación del cliente
 
 ## 👤 Autor
 
@@ -220,8 +220,10 @@ Ver **`DOCKER.md`**: construcción de imagen, variables de entorno, montaje de `
 - Verificar que la búsqueda haya devuelto resultados
 
 ### Error de licencia
+- Verificar que `LICENSE_SECRET` esté definido en el servidor (sin él ninguna clave es válida)
 - Verificar que la licencia esté activada en `/admin`
 - Verificar que la fecha de expiración no haya pasado
+- La clave debe haberse generado con el **mismo** `LICENSE_SECRET` que usa la app
 
 ## 📞 Soporte
 
