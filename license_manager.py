@@ -1,6 +1,6 @@
 # license_manager.py - Validación de licencia por fecha (no manipulable por el usuario)
 # La clave solo la puede proveer el desarrollador; la duración viene en la propia clave.
-# No requiere variables de entorno: se usa un secreto por defecto en código (el desarrollador puede cambiarlo).
+# Este módulo es autónomo: la app valida sin depender de generate_license_key.py (script solo para el administrador).
 import json
 import os
 import hmac
@@ -12,9 +12,9 @@ LICENSE_FILE = "license.json"
 # Formato de clave: YYYY-MM-DD-<HMAC_SHA256(YYYY-MM-DD, secret) en hex>
 KEY_DATE_LEN = 10  # "YYYY-MM-DD"
 
-# Secreto para verificar claves. Sin variables de entorno la app usa este valor.
-# El desarrollador puede cambiarlo y usar el mismo valor en generate_license_key.py para generar claves.
-_DEFAULT_LICENSE_SECRET = "ControlM-Search-License-2024"
+# Secreto para verificar claves. Sin LICENSE_SECRET en entorno se usa este valor.
+# El script generate_license_key.py importa _get_secret desde aquí para firmar con el mismo secreto.
+_DEFAULT_LICENSE_SECRET = "ControlM-Search-License-YPF"
 
 
 def _path():

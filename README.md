@@ -1,20 +1,19 @@
 # Control-M Search®
 
-Aplicación web Flask para búsqueda y consultas avanzadas en bases de datos de Control-M. Permite realizar búsquedas, generar informes y exportar datos desde las tablas DEF_JOB y CMS_NODGRP de Control-M.
+Aplicación web Flask para búsqueda y consultas avanzadas en bases de datos de Control-M. Permite realizar búsquedas y exportar resultados a CSV desde las tablas de Control-M (por ejemplo `DEF_JOB`, `CMS_NODGRP` y consultas relacionadas). El módulo de **informes** no está incluido en esta versión; se prevé para una versión posterior.
 
 ## 🚀 Características
 
 - **Búsquedas básicas**: Por aplicación, grupo, node_id, jobname, descripción, tablas, script, variables, estadísticas, condiciones IN/OUT
 - **Consultas avanzadas**: Soporte para AFT, SAP, BW y OS400
-- **Informes interactivos**: Panel lateral con múltiples informes (NODE_ID, APPLICATION, TASK_TYPE, OWNER, Node Groups, Variables Globales)
-- **Exportación a CSV**: Exporta resultados de búsquedas e informes
-- **Sistema de licencias**: Validación por fecha con activación mediante clave
+- **Exportación a CSV**: Exporta la última búsqueda realizada (menú *Exportar a CSV*)
+- **Sistema de licencias**: Validación por fecha en servidor (`license_manager.py`); activación en `/admin` con clave emitida por el proveedor
 - **Panel de administración**: Gestión de licencias y configuración de base de datos
 - **Multi-base de datos**: Soporte para Oracle, SQL Server y PostgreSQL
 
 ## 📋 Requisitos
 
-- Python 3.8 o superior
+- Python 3.8 o superior (entorno local). La imagen Docker usa **Python 3.11** sobre **AlmaLinux 9**; ver `DOCKER.md`.
 - Acceso a base de datos Control-M (Oracle, SQL Server o PostgreSQL)
 - Driver ODBC para SQL Server (si se usa SQL Server)
 
@@ -63,9 +62,11 @@ Aplicación web Flask para búsqueda y consultas avanzadas en bases de datos de 
 
 1. **Configurar base de datos**
    
-   La aplicación utiliza el archivo `Control-M_SearchWeb/db_config.json` para la configuración de base de datos. Puedes configurarlo mediante:
+   La aplicación utiliza el archivo `db_config.json` en la raíz del proyecto para la configuración de base de datos. Puedes configurarlo mediante:
    - El panel de administración en `/admin` (requiere contraseña)
-   - Editando manualmente el archivo `Control-M_SearchWeb/db_config.json`
+   - Editando manualmente `db_config.json`
+
+   En Docker, si montas `db_config.json` como solo lectura (`:ro`), no podrás guardar cambios desde `/admin`; monta el volumen sin `:ro` si necesitas editar la configuración desde la interfaz.
 
 
 ## 🏃 Ejecución
@@ -108,23 +109,14 @@ En "Consultas Avanzadas" puedes realizar búsquedas específicas para:
 - **BW**: Búsqueda por job name Control-M o cadena de procesos
 - **OS400**: Búsqueda por CMD Line o job name
 
-### Informes
+### Informes (próxima versión)
 
-En la página "Informes" encontrarás:
-- **Por NODE_ID**: Conteo de jobs por NODE_ID
-- **Por APPLICATION**: Conteo de jobs por APPLICATION
-- **Por TASK_TYPE**: Conteo de jobs por TASK_TYPE
-- **Por OWNER**: Conteo de jobs por OWNER
-- **Node Groups**: Lista de grupos de nodos
-- **Variables Globales**: Búsqueda de variables globales (requiere parámetro de búsqueda)
-
-Cada informe incluye un botón para exportar a CSV.
+En esta versión **no** hay pantalla ni rutas de informes agregados. Las búsquedas por **Node Groups** y **Variables globales** siguen disponibles en la página principal y en consultas avanzadas según el formulario.
 
 ### Exportación
 
-- Los resultados de búsquedas se pueden exportar desde el menú "Exportar a CSV"
-- Los informes tienen botones de exportación individuales
-- Los archivos CSV se descargan con nombres descriptivos
+- Tras una búsqueda con resultados, usa el menú **Exportar a CSV** para descargar la última consulta ejecutada (`consulta.csv`).
+- Si no hay resultados en caché, la exportación indicará que no hay datos; ejecuta una búsqueda primero.
 
 ### Administración
 
@@ -133,33 +125,41 @@ Accede a `/admin` para:
 - Configurar conexión a base de datos
 - Ver información del sistema
 
-**Nota**: Cambiar la contraseña de administración en producción modificando `ADMIN_PASSWORD` en `app.py`
+**Nota**: En producción, define la contraseña de administración con la variable de entorno `ADMIN_PASSWORD` (por defecto en código solo para desarrollo). También conviene fijar `FLASK_SECRET_KEY`.
+
+### Licencias (proveedor vs. cliente)
+
+- **En runtime**, la aplicación solo usa `license_manager.py`: verifica la clave guardada en `license.json` y la fecha de expiración. **No hace falta** `generate_license_key.py` en el servidor del cliente para validar.
+- **Generación de claves** (solo quien distribuye el software): ejecuta `python generate_license_key.py YYYY-MM-DD` o `python generate_license_key.py --years N`. Ese script importa la misma lógica de secreto que la app (`_get_secret` en `license_manager`) para firmar claves coherentes con la verificación.
+- **Secreto compartido**: por defecto está en código (`license_manager`); en producción puedes fijar **`LICENSE_SECRET`** en el entorno (mismo valor al generar claves y al ejecutar la app). Cambia el valor por defecto si distribuyes binarios o imágenes a terceros.
+- **Docker**: `.dockerignore` excluye `generate_license_key.py` de la imagen, de modo que el contenedor del cliente no incluye el generador.
 
 
 ## 📁 Estructura del Proyecto
 
 ```
-├── Control-M_SearchWeb/
-│   ├── app.py                 # Aplicación Flask principal
-│   ├── db.py                  # Acceso a base de datos
-│   ├── config.py              # Configuración de conexiones
-│   ├── db_config_manager.py   # Gestión de configuración persistente
-│   ├── license_manager.py     # Gestión de licencias
-│   ├── odbc_utils.py          # Utilidades ODBC
-│   ├── generate_license_key.py # Generador de claves de licencia
-│   ├── templates/             # Plantillas HTML (Jinja2)
-│   ├── db_config.json         # Configuración de BD (se crea automáticamente)
-│   └── license.json           # Archivo de licencia (se crea automáticamente)
-├── requirements.txt           # Dependencias Python
-└── README.md                  # Este archivo
+├── app.py                    # Aplicación Flask principal
+├── db.py                     # Acceso a datos (SQLAlchemy)
+├── config.py                 # URLs de conexión según tipo de BD
+├── db_config_manager.py      # Lectura/escritura de db_config.json
+├── license_manager.py        # Validación y activación de licencia (autónomo en runtime)
+├── generate_license_key.py   # Generador de claves (solo administrador; no requerido en el cliente)
+├── odbc_utils.py             # Listado de drivers ODBC (SQL Server, admin)
+├── templates/                # Plantillas HTML (Jinja2)
+├── k8s/                      # Manifiestos Kubernetes (opcional)
+├── Dockerfile                # Imagen Docker (AlmaLinux 9 + Python 3.11)
+├── DOCKER.md                 # Guía Docker / Kubernetes
+├── db_config.json            # Configuración de BD (editable o vía /admin)
+├── license.json              # Licencia activa (generado vía /admin)
+├── requirements.txt          # Dependencias Python
+└── README.md                 # Este archivo
 ```
 
 ## 🗄️ Bases de Datos Soportadas
 
 ### Oracle
-- Requiere: `oracledb` (anteriormente cx_Oracle)
+- Requiere: `oracledb` (modo thin; sin Oracle Client)
 - Configuración: Host, puerto, service_name o SID, usuario, contraseña
-- Soporta modo thin (sin Oracle Client)
 
 ### SQL Server
 - Requiere: `pyodbc` y driver ODBC instalado
@@ -174,7 +174,7 @@ Accede a `/admin` para:
 
 ### Tecnologías Utilizadas
 
-- **Backend**: Flask (Python)
+- **Backend**: Flask (Python), **SQLAlchemy 2** para consultas
 - **Frontend**: Bootstrap 5, HTML5, JavaScript
 - **Base de datos**: Oracle / SQL Server / PostgreSQL
 - **Templates**: Jinja2
@@ -183,8 +183,14 @@ Accede a `/admin` para:
 
 - `app.py`: Contiene todas las rutas y lógica de la aplicación
 - `db.py`: Maneja todas las consultas a la base de datos
-- `config.py`: Configuración de conexiones según tipo de BD
+- `config.py`: URLs SQLAlchemy y tipo de BD (`oracle`, `mssql`, `postgresql`)
+- `license_manager.py`: Comprueba y guarda la licencia; no depende del script generador en despliegue
+- `generate_license_key.py`: Herramienta de línea de comandos para el proveedor (no necesaria en el entorno del usuario final)
 - `templates/`: Plantillas HTML con Bootstrap
+
+### Contenedor (Docker)
+
+Ver **`DOCKER.md`**: construcción de imagen, variables de entorno, montaje de `db_config.json` / `license.json` y despliegue en Kubernetes.
 
 ## 📝 Notas
 
@@ -192,6 +198,7 @@ Accede a `/admin` para:
 - Los archivos `db_config.json` y `license.json` se crean automáticamente
 - En producción, cambiar la clave secreta de Flask y la contraseña de administración
 - El sistema de licencias valida la fecha en el servidor, no puede ser manipulado por el cliente
+- La clave de licencia se firma con HMAC; quien genera claves debe usar el mismo secreto que la app (`LICENSE_SECRET` o el valor por defecto en `license_manager`, según tu despliegue)
 
 ## 👤 Autor
 
